@@ -37,9 +37,9 @@ class AVIMAPlayerListViewModel: ObservableObject {
     /// Tracks the complete lifecycle of video loading:
     /// - `.notStarted`: Initial state, no load attempted
     /// - `.loading`: Currently fetching videos
-    /// - `.success([IMAVideoItem])`: Videos loaded successfully
+    /// - `.success([AVIMAVideoItem])`: Videos loaded successfully
     /// - `.error(Error)`: Load failed with error
-    @Published private(set) var videosLoadResult: LoadResult<[IMAVideoItem]> = .notStarted
+    @Published private(set) var videosLoadResult: LoadResult<[AVIMAVideoItem]> = .notStarted
 
     // MARK: - Computed Properties (Derived State)
 
@@ -47,7 +47,7 @@ class AVIMAPlayerListViewModel: ObservableObject {
     ///
     /// Provides safe access to loaded videos with empty array fallback.
     /// View can bind to this without handling optionals.
-    var videos: [IMAVideoItem] {
+    var videos: [AVIMAVideoItem] {
         videosLoadResult.value ?? []
     }
 
@@ -118,7 +118,7 @@ class AVIMAPlayerListViewModel: ObservableObject {
         // } catch {
         //     videosLoadResult = .error(error)
         // }
-        videosLoadResult = .success(IMAVideoItem.samples)
+        videosLoadResult = .success(AVIMAVideoItem.samples)
     }
 
     /// Refreshes the video list.
@@ -139,5 +139,5 @@ class AVIMAPlayerListViewModel: ObservableObject {
     // MARK: - Private Implementation
 
     // Future: Add private helper methods for API integration
-    // private func fetchVideosFromAPI() async throws -> [IMAVideoItem] { ... }
+    // private func fetchVideosFromAPI() async throws -> [AVIMAVideoItem] { ... }
 }

@@ -108,7 +108,7 @@ struct AVIMAPlayerListView: View {
     // MARK: - Video List
 
     @ViewBuilder
-    private func videoList(videos: [IMAVideoItem]) -> some View {
+    private func videoList(videos: [AVIMAVideoItem]) -> some View {
         List(videos) { video in
             NavigationLink {
                 AVIMAPlayerView(video: video)
@@ -129,7 +129,7 @@ private struct VideoRowView: View {
 
     // MARK: - Properties
 
-    let video: IMAVideoItem
+    let video: AVIMAVideoItem
 
     // MARK: - Body
 
@@ -200,12 +200,12 @@ class AVIMAPlayerListViewModel: ObservableObject {
     // MARK: - Published State
 
     /// Load state for videos
-    @Published private(set) var videosLoadResult: LoadResult<[IMAVideoItem]> = .notStarted
+    @Published private(set) var videosLoadResult: LoadResult<[AVIMAVideoItem]> = .notStarted
 
     // MARK: - Computed Properties
 
     /// Videos array (empty if not loaded)
-    var videos: [IMAVideoItem] {
+    var videos: [AVIMAVideoItem] {
         videosLoadResult.value ?? []
     }
 
@@ -236,7 +236,7 @@ class AVIMAPlayerListViewModel: ObservableObject {
 
         // For now, use sample data
         // In production, this would fetch from an API
-        videosLoadResult = .success(IMAVideoItem.samples)
+        videosLoadResult = .success(AVIMAVideoItem.samples)
     }
 
     /// Refreshes the video list.

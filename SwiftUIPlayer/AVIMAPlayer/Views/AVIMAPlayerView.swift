@@ -31,7 +31,7 @@ struct AVIMAPlayerView: View {
 
     @StateObject private var viewModel: AVIMAPlayerViewModel
 
-    let video: IMAVideoItem
+    let video: AVIMAVideoItem
 
     @Environment(\.dismiss) private var dismiss
 
@@ -44,7 +44,7 @@ struct AVIMAPlayerView: View {
     ///
     /// - Parameter video: The video to play
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(video: IMAVideoItem, viewModel: AVIMAPlayerViewModel? = nil) {
+    init(video: AVIMAVideoItem, viewModel: AVIMAPlayerViewModel? = nil) {
         self.video = video
         _viewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerViewModel())
     }
@@ -241,7 +241,7 @@ struct AVIMAPlayerView: View {
 struct AVIMAPlayerView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationStack {
-            AVIMAPlayerView(video: IMAVideoItem.samples[0])
+            AVIMAPlayerView(video: AVIMAVideoItem.samples[0])
         }
         .preferredColorScheme(.dark)
     }

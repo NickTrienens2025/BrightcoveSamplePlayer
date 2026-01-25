@@ -1,5 +1,5 @@
 //
-//  IMAVideoItem.swift
+//  AVIMAVideoItem.swift
 //  SwiftUIPlayer
 //
 //  A model representing a video with IMA ad integration.
@@ -15,7 +15,7 @@ import BrightcovePlayerSDK
 ///
 /// - Note: This model implements custom decoding for resilient parsing following
 ///         CLAUDE.md standards for API model handling.
-struct IMAVideoItem: Identifiable, Equatable {
+struct AVIMAVideoItem: Identifiable, Equatable {
 
     // MARK: - Properties
 
@@ -72,20 +72,20 @@ struct IMAVideoItem: Identifiable, Equatable {
 
     // MARK: - Equatable
 
-    static func == (lhs: IMAVideoItem, rhs: IMAVideoItem) -> Bool {
+    static func == (lhs: AVIMAVideoItem, rhs: AVIMAVideoItem) -> Bool {
         lhs.id == rhs.id
     }
 }
 
 // MARK: - Sample Data
 
-extension IMAVideoItem {
+extension AVIMAVideoItem {
 
     /// Sample video items for testing and previews.
     ///
     /// - Note: Uses Google IMA sample ad tags for demonstration purposes.
-    static let samples: [IMAVideoItem] = [
-        IMAVideoItem(
+    static let samples: [AVIMAVideoItem] = [
+        AVIMAVideoItem(
             id: "sample-1",
             name: "Sample Video with Pre-roll",
             description: "Demonstrates pre-roll ad playback before main content",
@@ -94,7 +94,7 @@ extension IMAVideoItem {
             adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=",
             video: BCOVVideo()
         ),
-        IMAVideoItem(
+        AVIMAVideoItem(
             id: "sample-2",
             name: "Sample Video with Mid-roll",
             description: "Demonstrates mid-roll ad insertion at cue points",
@@ -103,7 +103,7 @@ extension IMAVideoItem {
             adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/vmap_ad_samples&sz=640x480&cust_params=sample_ar%3Dpremidpostpod&ciu_szs=300x250&gdfp_req=1&ad_rule=1&output=vmap&unviewed_position_start=1&env=vp&impl=s&correlator=",
             video: BCOVVideo()
         ),
-        IMAVideoItem(
+        AVIMAVideoItem(
             id: "sample-3",
             name: "Sample Video with Skippable Ads",
             description: "Demonstrates skippable ad functionality",

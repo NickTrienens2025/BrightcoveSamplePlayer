@@ -123,7 +123,7 @@ class AVIMAPlayerViewModel: ObservableObject {
     // MARK: - Published State (Observable by View)
 
     /// The currently loaded video item
-    @Published private(set) var currentVideo: IMAVideoItem?
+    @Published private(set) var currentVideo: AVIMAVideoItem?
 
     /// Current playback mode (idle, main video, or ad)
     @Published private(set) var playbackMode: PlaybackMode = .idle
@@ -254,7 +254,7 @@ class AVIMAPlayerViewModel: ObservableObject {
     /// Main video begins buffering while IMA ads are loaded.
     ///
     /// - Parameter video: The video item to load
-    func loadVideo(_ video: IMAVideoItem) async {
+    func loadVideo(_ video: AVIMAVideoItem) async {
         // Prevent duplicate loads
         guard initializationStatus != .loading else { return }
 
@@ -367,7 +367,7 @@ class AVIMAPlayerViewModel: ObservableObject {
     // MARK: - Private Implementation
 
     /// Initializes both main and ad players with the video.
-    private func initializePlayers(with video: IMAVideoItem) async throws {
+    private func initializePlayers(with video: AVIMAVideoItem) async throws {
         // Clean up existing players
         cleanup()
 
@@ -379,7 +379,7 @@ class AVIMAPlayerViewModel: ObservableObject {
     }
 
     /// Initializes the main video player.
-    private func initializeMainPlayer(with video: IMAVideoItem) async throws {
+    private func initializeMainPlayer(with video: AVIMAVideoItem) async throws {
         mainVideoState = .loading
 
         // Create main player
@@ -404,7 +404,7 @@ class AVIMAPlayerViewModel: ObservableObject {
     }
 
     /// Initializes the IMA ads loader and manager.
-    private func initializeIMAPlayer(with video: IMAVideoItem) async throws {
+    private func initializeIMAPlayer(with video: AVIMAVideoItem) async throws {
         guard let adTagURL = URL(string: video.adTagURL) else {
             throw PlayerError.invalidAdTagURL
         }

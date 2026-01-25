@@ -81,14 +81,14 @@ class AVIMAPlayerViewModel: ObservableObject {
 
 ## Components
 
-### 1. IMAVideoItem
+### 1. AVIMAVideoItem
 
-**File:** `Models/IMAVideoItem.swift`
+**File:** `Models/AVIMAVideoItem.swift`
 
 Model representing a video with IMA ad configuration.
 
 ```swift
-struct IMAVideoItem: Identifiable {
+struct AVIMAVideoItem: Identifiable {
     let id: String
     let name: String
     let description: String
@@ -101,7 +101,7 @@ struct IMAVideoItem: Identifiable {
 
 **Usage:**
 ```swift
-let videoItem = IMAVideoItem(
+let videoItem = AVIMAVideoItem(
     id: "video-1",
     name: "Sample Video",
     description: "Demonstrates IMA ad integration",
@@ -230,7 +230,7 @@ List view displaying available videos.
 ```swift
 @MainActor
 class AVIMAPlayerListViewModel: ObservableObject {
-    @Published private(set) var videosLoadResult: LoadResult<[IMAVideoItem]> = .notStarted
+    @Published private(set) var videosLoadResult: LoadResult<[AVIMAVideoItem]> = .notStarted
 
     func loadVideos(forced: Bool = false) async
     func refresh() async
@@ -310,7 +310,7 @@ AVIMAPlayerListView()
 
 ```swift
 let viewModel = AVIMAPlayerViewModel()
-let video = IMAVideoItem(...)
+let video = AVIMAVideoItem(...)
 
 // Load video
 await viewModel.loadVideo(video)
@@ -363,7 +363,7 @@ if viewModel.playbackMode == .advertisement {
 
 1. **LoadResult for Async State**
    ```swift
-   @Published private(set) var videosLoadResult: LoadResult<[IMAVideoItem]> = .notStarted
+   @Published private(set) var videosLoadResult: LoadResult<[AVIMAVideoItem]> = .notStarted
    ```
    - Prevents fragmented state (separate isLoading/error/data)
    - Impossible states are impossible
@@ -412,7 +412,7 @@ if viewModel.playbackMode == .advertisement {
 @MainActor
 func testPlaybackStateTransitions() async throws {
     let viewModel = AVIMAPlayerViewModel()
-    let video = IMAVideoItem.samples[0]
+    let video = AVIMAVideoItem.samples[0]
 
     // Test loading
     XCTAssertEqual(viewModel.initializationStatus, .notStarted)

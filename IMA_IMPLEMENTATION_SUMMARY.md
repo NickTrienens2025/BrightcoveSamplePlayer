@@ -12,7 +12,7 @@ A complete, production-ready IMA video player system with dual-player architectu
 
 ### Models (2 files)
 
-1. **IMAVideoItem.swift** (~130 lines)
+1. **AVIMAVideoItem.swift** (~130 lines)
    - Model for videos with IMA ad configuration
    - Includes sample data for testing
    - Properties: id, name, description, thumbnailURL, duration, adTagURL, video
@@ -192,7 +192,7 @@ The new files need to be added to the Xcode project:
 
 ```
 Right-click on appropriate groups:
-- SwiftUIPlayer/Models/ → Add IMAVideoItem.swift, AVIMAPlayerViewModel.swift
+- SwiftUIPlayer/Models/ → Add AVIMAVideoItem.swift, AVIMAPlayerViewModel.swift
 - SwiftUIPlayer/Views/ → Add AVIMAPlayerControlsView.swift, AVIMAPlayerListView.swift, AVIMAPlayerView.swift
 ```
 
@@ -251,9 +251,9 @@ func loadVideos(forced: Bool = false) async {
     }
 }
 
-private func fetchVideosFromAPI() async throws -> [IMAVideoItem] {
+private func fetchVideosFromAPI() async throws -> [AVIMAVideoItem] {
     // Your API implementation here
-    // Should return IMAVideoItem instances with:
+    // Should return AVIMAVideoItem instances with:
     // - BCOVVideo objects from Brightcove SDK
     // - IMA ad tag URLs for each video
 }
@@ -310,7 +310,7 @@ Monitor console for IMA SDK logs to verify ad loading.
 Replace sample ad tags with your production IMA ad tag URLs:
 
 ```swift
-IMAVideoItem(
+AVIMAVideoItem(
     id: "prod-video-1",
     name: "Production Video",
     adTagURL: "YOUR_PRODUCTION_AD_TAG_URL",
