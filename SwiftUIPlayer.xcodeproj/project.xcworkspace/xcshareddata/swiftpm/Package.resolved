@@ -1,0 +1,33 @@
+{
+  "originHash" : "c136c0a7853d23bd22dea01b8c717ba8c7dec6131ec2c34fd3de43b8a2fd4819",
+  "pins" : [
+    {
+      "identity" : "brightcove-player-sdk-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/brightcove/brightcove-player-sdk-ios",
+      "state" : {
+        "branch" : "master",
+        "revision" : "5a20bd8f8ab934dbf7b3c4c8e0a28539c2da432d"
+      }
+    },
+    {
+      "identity" : "brightcove-player-sdk-ios-ima",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/brightcove/brightcove-player-sdk-ios-ima.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "ec5de090b2282d68e4b6e6d103833d4f701867bf"
+      }
+    },
+    {
+      "identity" : "swift-package-manager-google-interactive-media-ads-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/googleads/swift-package-manager-google-interactive-media-ads-ios",
+      "state" : {
+        "branch" : "main",
+        "revision" : "871bc80349774ba228c41096129995d1e9848b04"
+      }
+    }
+  ],
+  "version" : 3
+}
