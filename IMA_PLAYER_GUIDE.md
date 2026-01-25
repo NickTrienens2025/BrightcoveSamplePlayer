@@ -16,6 +16,18 @@ The IMA Player system provides a complete video playback solution with:
 
 ---
 
+## Platform Requirements
+
+- **Minimum iOS Version:** 16.0
+- **Brightcove SDK:** Latest compatible version
+- **Google IMA SDK:** 3.19.1+
+- **Swift:** 5.9+
+
+**iOS 16 Compatibility:**
+The player uses a custom `CustomContentUnavailableView` instead of the iOS 17+ `ContentUnavailableView` to maintain backwards compatibility with iOS 16. All other features are compatible with iOS 16.0 and above.
+
+---
+
 ## Architecture
 
 ### Dual-Player Design
@@ -210,20 +222,63 @@ List view displaying available videos.
 - Video metadata display (name, description, duration)
 - IMA ad indicator badge
 - Pull-to-refresh
-- Error handling with retry
+- Error handling with retry (iOS 16 compatible)
 - LoadResult pattern for data state
 
 **ViewModel:**
 
 ```swift
 @MainActor
-class AVAVIMAPlayerListViewModel: ObservableObject {
+class AVIMAPlayerListViewModel: ObservableObject {
     @Published private(set) var videosLoadResult: LoadResult<[IMAVideoItem]> = .notStarted
 
     func loadVideos(forced: Bool = false) async
     func refresh() async
 }
 ```
+
+### 6. CustomContentUnavailableView
+
+**File:** `Views/CustomContentUnavailableView.swift`
+
+iOS 16 compatible alternative to `ContentUnavailableView` (iOS 17+).
+
+**Purpose:**
+Provides backwards compatibility for error and empty states on iOS 16, where Apple's `ContentUnavailableView` is not available.
+
+**Features:**
+- Title with SF Symbol icon
+- Optional description text
+- Optional action buttons
+- Centered layout with consistent spacing
+- Same visual appearance as iOS 17's ContentUnavailableView
+
+**Usage:**
+```swift
+// With action button
+CustomContentUnavailableView(
+    "Unable to Load Videos",
+    systemImage: "exclamationmark.triangle",
+    description: error.localizedDescription
+) {
+    Button("Retry") {
+        Task { await viewModel.refresh() }
+    }
+    .buttonStyle(.borderedProminent)
+}
+
+// Without action button
+CustomContentUnavailableView(
+    "No Videos",
+    systemImage: "video.slash",
+    description: "There are no videos available."
+)
+```
+
+**Design Notes:**
+- Matches iOS 17 ContentUnavailableView API surface
+- Uses iOS 16-compatible SwiftUI components
+- Automatically adjusts to iOS 17+ if available (future-proof)
 
 ---
 

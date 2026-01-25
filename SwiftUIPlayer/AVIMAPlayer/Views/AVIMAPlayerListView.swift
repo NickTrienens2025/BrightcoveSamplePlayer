@@ -91,11 +91,11 @@ struct AVIMAPlayerListView: View {
 
     @ViewBuilder
     private func errorView(error: Error) -> some View {
-        ContentUnavailableView {
-            Label("Unable to Load Videos", systemImage: "exclamationmark.triangle")
-        } description: {
-            Text(error.localizedDescription)
-        } actions: {
+        CustomContentUnavailableView(
+            "Unable to Load Videos",
+            systemImage: "exclamationmark.triangle",
+            description: error.localizedDescription
+        ) {
             Button("Retry") {
                 Task {
                     await viewModel.refresh()
