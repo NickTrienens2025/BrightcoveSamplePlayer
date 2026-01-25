@@ -200,9 +200,9 @@ case .success:
 }
 ```
 
-### 5. IMAVideoListView
+### 5. IMAPlayerListView
 
-**File:** `Views/IMAVideoListView.swift`
+**File:** `Views/IMAPlayerListView.swift`
 
 List view displaying available videos.
 
@@ -217,7 +217,7 @@ List view displaying available videos.
 
 ```swift
 @MainActor
-class IMAVideoListViewModel: ObservableObject {
+class IMAPlayerListViewModel: ObservableObject {
     @Published private(set) var videosLoadResult: LoadResult<[IMAVideoItem]> = .notStarted
 
     func loadVideos(forced: Bool = false) async
@@ -234,7 +234,7 @@ class IMAVideoListViewModel: ObservableObject {
 1. **Add to ContentView:**
 
 ```swift
-IMAVideoListView()
+IMAPlayerListView()
     .tabItem {
         Label("IMA Player", systemImage: "play.rectangle.fill")
     }

@@ -29,7 +29,7 @@ struct ContentView: View {
                 }
                 .tag(Tab.videos)
 
-            IMAVideoListView()
+            IMAPlayerListView()
                 .tabItem {
                     Label("IMA Player", systemImage: "play.rectangle.fill")
                 }

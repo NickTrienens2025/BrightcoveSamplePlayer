@@ -1,28 +1,31 @@
 //
-//  IMAVideoListView.swift
+//  IMAPlayerListView.swift
 //  SwiftUIPlayer
 //
-//  List view displaying available videos with IMA ad integration.
+//  List view for selecting videos to play with the IMA Player.
 //
 
 import SwiftUI
 
-/// List view displaying videos with IMA ad support.
+/// List view for browsing and selecting videos for the IMA Player.
+///
+/// This is the entry point for the IMA Player tab - it shows available
+/// videos that can be played with the custom IMA ad integration.
 ///
 /// **Features:**
 /// - Displays video metadata (name, description, duration)
-/// - Navigates to dedicated player view on selection
+/// - Navigates to dedicated IMA player view on selection
 /// - Uses LoadResult for data state management
 /// - Follows CLAUDE.md ViewModel patterns
 ///
 /// **Data Flow:**
 /// Videos are loaded via ViewModel with complete state tracking.
 /// Each video tap navigates to `IMAVideoPlayerView` with isolated player instance.
-struct IMAVideoListView: View {
+struct IMAPlayerListView: View {
 
     // MARK: - Properties
 
-    @StateObject private var viewModel: IMAVideoListViewModel
+    @StateObject private var viewModel: IMAPlayerListViewModel
 
     // MARK: - Initialization
 
@@ -32,8 +35,8 @@ struct IMAVideoListView: View {
     /// @MainActor ViewModels (per CLAUDE.md standards).
     ///
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(viewModel: IMAVideoListViewModel? = nil) {
-        _viewModel = StateObject(wrappedValue: viewModel ?? IMAVideoListViewModel())
+    init(viewModel: IMAPlayerListViewModel? = nil) {
+        _viewModel = StateObject(wrappedValue: viewModel ?? IMAPlayerListViewModel())
     }
 
     // MARK: - Body
@@ -184,7 +187,7 @@ private struct VideoRowView: View {
 
 // MARK: - ViewModel
 
-/// ViewModel managing video list state.
+/// ViewModel managing the IMA Player video library state.
 ///
 /// Follows CLAUDE.md patterns:
 /// - Uses LoadResult for async state
@@ -192,7 +195,7 @@ private struct VideoRowView: View {
 /// - Closed loops with @Published properties
 /// - Guard clauses to prevent duplicate fetches
 @MainActor
-class IMAVideoListViewModel: ObservableObject {
+class IMAPlayerListViewModel: ObservableObject {
 
     // MARK: - Published State
 
@@ -245,9 +248,9 @@ class IMAVideoListViewModel: ObservableObject {
 // MARK: - Preview
 
 #if DEBUG
-struct IMAVideoListView_Previews: PreviewProvider {
+struct IMAPlayerListView_Previews: PreviewProvider {
     static var previews: some View {
-        IMAVideoListView()
+        IMAPlayerListView()
     }
 }
 #endif

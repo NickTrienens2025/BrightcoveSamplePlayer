@@ -28,9 +28,9 @@ A complete, production-ready IMA video player system with dual-player architectu
 
 ### Views (3 files)
 
-3. **IMAVideoListView.swift** (~240 lines)
+3. **IMAPlayerListView.swift** (~240 lines)
    - List of videos with LoadResult pattern
-   - Integrated IMAVideoListViewModel
+   - Integrated IMAPlayerListViewModel
    - Pull-to-refresh support
    - Error handling with retry
    - Video metadata display
@@ -54,7 +54,7 @@ A complete, production-ready IMA video player system with dual-player architectu
 
 6. **ContentView.swift**
    - Replaced "Custom IMA" placeholder tab
-   - Added IMAVideoListView integration
+   - Added IMAPlayerListView integration
    - New tab: "IMA Player" with play icon
 
 ### Documentation (2 files)
@@ -191,7 +191,7 @@ The new files need to be added to the Xcode project:
 ```
 Right-click on appropriate groups:
 - SwiftUIPlayer/Models/ → Add IMAVideoItem.swift, IMAPlayerViewModel.swift
-- SwiftUIPlayer/Views/ → Add IMAPlayerControlsView.swift, IMAVideoListView.swift, IMAVideoPlayerView.swift
+- SwiftUIPlayer/Views/ → Add IMAPlayerControlsView.swift, IMAPlayerListView.swift, IMAVideoPlayerView.swift
 ```
 
 ### 2. Add Google IMA SDK
@@ -231,7 +231,7 @@ Add required permissions for ad tracking:
 
 Currently using sample data. To connect real videos:
 
-In `IMAVideoListViewModel.loadVideos()`:
+In `IMAPlayerListViewModel.loadVideos()`:
 
 ```swift
 func loadVideos(forced: Bool = false) async {
