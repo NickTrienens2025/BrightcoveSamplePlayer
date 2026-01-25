@@ -10,6 +10,7 @@ import AVFoundation
 import Combine
 import Foundation
 import GoogleInteractiveMediaAds
+import UIKit
 import BrightcovePlayerSDK
 
 /// ViewModel managing IMA video playback with comprehensive state tracking.
@@ -230,14 +231,19 @@ class AVIMAPlayerViewModel: ObservableObject {
     /// Combine cancellables
     private var cancellables = Set<AnyCancellable>()
 
+    /// Whether playback was active before backgrounding
+    private var wasPlayingBeforeBackground = false
+
     // MARK: - Initialization
 
     init() {
         setupMuteObserver()
+        setupLifecycleObservers()
     }
 
     deinit {
         cleanup()
+        removeLifecycleObservers()
     }
 
     // MARK: - Public API (Called by View)
@@ -478,6 +484,79 @@ class AVIMAPlayerViewModel: ObservableObject {
                 self?.adsManager?.volume = isMuted ? 0 : 1
             }
             .store(in: &cancellables)
+    }
+
+    /// Sets up observers for app lifecycle events.
+    ///
+    /// Monitors when the app enters background or returns to foreground
+    /// to properly pause and resume playback.
+    private func setupLifecycleObservers() {
+        // App going to background
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+
+        // App returning to foreground
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    /// Removes lifecycle observers.
+    private func removeLifecycleObservers() {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    /// Called when app enters background.
+    ///
+    /// Pauses playback to conserve battery and respect system resources.
+    /// Tracks whether content was playing to optionally resume on return.
+    @objc
+    private func appDidEnterBackground() {
+        // Track if we were playing before backgrounding
+        wasPlayingBeforeBackground = isPlaying
+
+        // Always pause when entering background
+        if isPlaying {
+            pause()
+        }
+    }
+
+    /// Called when app returns to foreground.
+    ///
+    /// Currently leaves playback paused - user must manually resume.
+    /// This provides better user experience as auto-resume can be jarring.
+    ///
+    /// **Future Enhancement:**
+    /// Could add a setting to optionally auto-resume:
+    /// ```
+    /// if wasPlayingBeforeBackground && userPreferences.autoResume {
+    ///     play()
+    /// }
+    /// ```
+    @objc
+    private func appWillEnterForeground() {
+        // Currently intentionally leaving paused
+        // User can manually resume playback if desired
+        // This prevents unexpected audio/video when returning to app
+
+        // Reset tracking flag
+        wasPlayingBeforeBackground = false
     }
 
     /// Switches playback mode to advertisement.
