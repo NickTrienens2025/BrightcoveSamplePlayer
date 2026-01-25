@@ -84,33 +84,61 @@ extension AVIMAVideoItem {
     /// Sample video items for testing and previews.
     ///
     /// - Note: Uses Google IMA sample ad tags for demonstration purposes.
-    static let samples: [AVIMAVideoItem] = [
-        AVIMAVideoItem(
-            id: "sample-1",
-            name: "Sample Video with Pre-roll",
-            description: "Demonstrates pre-roll ad playback before main content",
-            thumbnailURL: nil,
-            duration: 120,
-            adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=",
-            video: BCOVVideo()
-        ),
-        AVIMAVideoItem(
-            id: "sample-2",
-            name: "Sample Video with Mid-roll",
-            description: "Demonstrates mid-roll ad insertion at cue points",
-            thumbnailURL: nil,
-            duration: 180,
-            adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/vmap_ad_samples&sz=640x480&cust_params=sample_ar%3Dpremidpostpod&ciu_szs=300x250&gdfp_req=1&ad_rule=1&output=vmap&unviewed_position_start=1&env=vp&impl=s&correlator=",
-            video: BCOVVideo()
-        ),
-        AVIMAVideoItem(
-            id: "sample-3",
-            name: "Sample Video with Skippable Ads",
-            description: "Demonstrates skippable ad functionality",
-            thumbnailURL: nil,
-            duration: 150,
-            adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dskippablelinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=",
-            video: BCOVVideo()
-        )
-    ]
+    /// - Note: Uses Brightcove sample video URLs for actual playback.
+    static let samples: [AVIMAVideoItem] = {
+        // Sample video URLs from Brightcove
+        let sampleVideoURL = "https://solutions.brightcove.com/bcls/assets/videos/Great_Horned_Owl.mp4"
+
+        // Create BCOVSource for the sample video
+        guard let videoURL = URL(string: sampleVideoURL),
+              let source = BCOVSource(url: videoURL, deliveryMethod: kBCOVSourceDeliveryHLS, properties: nil) else {
+            return []
+        }
+
+        // Create BCOVVideo objects
+        let video1 = BCOVVideo(source: source, cuePoints: BCOVCuePointCollection(array: []), properties: [
+            "id": "sample-1",
+            "name": "Sample Video with Pre-roll"
+        ])
+
+        let video2 = BCOVVideo(source: source, cuePoints: BCOVCuePointCollection(array: []), properties: [
+            "id": "sample-2",
+            "name": "Sample Video with Mid-roll"
+        ])
+
+        let video3 = BCOVVideo(source: source, cuePoints: BCOVCuePointCollection(array: []), properties: [
+            "id": "sample-3",
+            "name": "Sample Video with Skippable Ads"
+        ])
+
+        return [
+            AVIMAVideoItem(
+                id: "sample-1",
+                name: "Sample Video with Pre-roll",
+                description: "Demonstrates pre-roll ad playback before main content",
+                thumbnailURL: nil,
+                duration: 120,
+                adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=",
+                video: video1
+            ),
+            AVIMAVideoItem(
+                id: "sample-2",
+                name: "Sample Video with Mid-roll",
+                description: "Demonstrates mid-roll ad insertion at cue points",
+                thumbnailURL: nil,
+                duration: 180,
+                adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/vmap_ad_samples&sz=640x480&cust_params=sample_ar%3Dpremidpostpod&ciu_szs=300x250&gdfp_req=1&ad_rule=1&output=vmap&unviewed_position_start=1&env=vp&impl=s&correlator=",
+                video: video2
+            ),
+            AVIMAVideoItem(
+                id: "sample-3",
+                name: "Sample Video with Skippable Ads",
+                description: "Demonstrates skippable ad functionality",
+                thumbnailURL: nil,
+                duration: 150,
+                adTagURL: "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dskippablelinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator=",
+                video: video3
+            )
+        ]
+    }()
 }

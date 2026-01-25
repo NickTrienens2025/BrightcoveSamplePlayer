@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -11,8 +11,8 @@
 		0E352B4B2EE3636A00EBEAE9 /* BrightcoveIMA in Frameworks */ = {isa = PBXBuildFile; productRef = 0E352B4A2EE3636A00EBEAE9 /* BrightcoveIMA */; };
 		0E352B4E2EE3637400EBEAE9 /* GoogleInteractiveMediaAds in Frameworks */ = {isa = PBXBuildFile; productRef = 0E352B4D2EE3637400EBEAE9 /* GoogleInteractiveMediaAds */; };
 		0E352B502EE364EC00EBEAE9 /* BCOVAdsPlayerViewControllerRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E352B4F2EE364EC00EBEAE9 /* BCOVAdsPlayerViewControllerRepresentable.swift */; };
+		0EBA77B42F269BC5009069CF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0EBA77B32F269BC5009069CF /* Assets.xcassets */; };
 		6B4A79A12ECF79BE007C1AC0 /* BCOVPlayerViewControllerRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B4A79A02ECF79BE007C1AC0 /* BCOVPlayerViewControllerRepresentable.swift */; };
-		D60781C92BAA800B003E582A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D60781C82BAA800B003E582A /* Assets.xcassets */; };
 		D622616C260927A3003CEF82 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D622616B260927A3003CEF82 /* ContentView.swift */; };
 		D6226171260927A5003CEF82 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6226170260927A5003CEF82 /* Preview Assets.xcassets */; };
 		D6226174260927A5003CEF82 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = D6226172260927A5003CEF82 /* LaunchScreen.storyboard */; };
@@ -35,8 +35,8 @@
 /* Begin PBXFileReference section */
 		0E352B452EE3631900EBEAE9 /* BCOVVideo+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BCOVVideo+Helpers.swift"; sourceTree = "<group>"; };
 		0E352B4F2EE364EC00EBEAE9 /* BCOVAdsPlayerViewControllerRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCOVAdsPlayerViewControllerRepresentable.swift; sourceTree = "<group>"; };
+		0EBA77B32F269BC5009069CF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6B4A79A02ECF79BE007C1AC0 /* BCOVPlayerViewControllerRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCOVPlayerViewControllerRepresentable.swift; sourceTree = "<group>"; };
-		D60781C82BAA800B003E582A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = "../../../FairPlay/BasicFairPlayPlayer-iOS/BasicFairPlayPlayer/Assets.xcassets"; sourceTree = "<group>"; };
 		D6226164260927A3003CEF82 /* SwiftUIPlayer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftUIPlayer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D622616B260927A3003CEF82 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		D6226170260927A5003CEF82 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -57,6 +57,11 @@
 		E9D9630F2A5726AF009D7B5A /* SwiftUIPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftUIPlayer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		0EBA77AB2F269B3C009069CF /* AVIMAPlayer */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = AVIMAPlayer; sourceTree = "<group>"; };
+		0EBA77BD2F269BEF009069CF /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		D6226161260927A3003CEF82 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -74,6 +79,7 @@
 		D622615B260927A3003CEF82 = {
 			isa = PBXGroup;
 			children = (
+				0EBA77B32F269BC5009069CF /* Assets.xcassets */,
 				D6226166260927A3003CEF82 /* SwiftUIPlayer */,
 				D6226165260927A3003CEF82 /* Products */,
 			);
@@ -90,8 +96,9 @@
 		D6226166260927A3003CEF82 /* SwiftUIPlayer */ = {
 			isa = PBXGroup;
 			children = (
+				0EBA77BD2F269BEF009069CF /* Shared */,
+				0EBA77AB2F269B3C009069CF /* AVIMAPlayer */,
 				0E352B452EE3631900EBEAE9 /* BCOVVideo+Helpers.swift */,
-				D60781C82BAA800B003E582A /* Assets.xcassets */,
 				D6226175260927A5003CEF82 /* Info.plist */,
 				D6226172260927A5003CEF82 /* LaunchScreen.storyboard */,
 				E9392E2E2A5EF91100FB951A /* AppDelegate.swift */,
@@ -154,6 +161,10 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				0EBA77AB2F269B3C009069CF /* AVIMAPlayer */,
+				0EBA77BD2F269BEF009069CF /* Shared */,
+			);
 			name = SwiftUIPlayer;
 			packageProductDependencies = (
 				D6B937492BF5B5820016D871 /* BrightcovePlayerSDK */,
@@ -208,7 +219,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D6226174260927A5003CEF82 /* LaunchScreen.storyboard in Resources */,
-				D60781C92BAA800B003E582A /* Assets.xcassets in Resources */,
+				0EBA77B42F269BC5009069CF /* Assets.xcassets in Resources */,
 				D6226171260927A5003CEF82 /* Preview Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

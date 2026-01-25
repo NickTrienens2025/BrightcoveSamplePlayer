@@ -185,66 +185,6 @@ private struct VideoRowView: View {
     }
 }
 
-// MARK: - ViewModel
-
-/// ViewModel managing the IMA Player video library state.
-///
-/// Follows CLAUDE.md patterns:
-/// - Uses LoadResult for async state
-/// - @MainActor for main thread isolation
-/// - Closed loops with @Published properties
-/// - Guard clauses to prevent duplicate fetches
-@MainActor
-class AVIMAPlayerListViewModel: ObservableObject {
-
-    // MARK: - Published State
-
-    /// Load state for videos
-    @Published private(set) var videosLoadResult: LoadResult<[AVIMAVideoItem]> = .notStarted
-
-    // MARK: - Computed Properties
-
-    /// Videos array (empty if not loaded)
-    var videos: [AVIMAVideoItem] {
-        videosLoadResult.value ?? []
-    }
-
-    /// Whether videos are currently loading
-    var isLoading: Bool {
-        videosLoadResult.active
-    }
-
-    // MARK: - Public API
-
-    /// Loads the video list.
-    ///
-    /// Skips load if already loaded and not forced.
-    /// Prevents duplicate fetches while loading.
-    ///
-    /// - Parameter forced: Whether to force reload even if already loaded
-    func loadVideos(forced: Bool = false) async {
-        // Skip if already loaded and not forced
-        guard forced || !videosLoadResult.loaded else { return }
-
-        // Prevent duplicate fetches
-        guard !videosLoadResult.active else { return }
-
-        videosLoadResult = .loading
-
-        // Simulate network delay for demo
-        try? await Task.sleep(for: .milliseconds(500))
-
-        // For now, use sample data
-        // In production, this would fetch from an API
-        videosLoadResult = .success(AVIMAVideoItem.samples)
-    }
-
-    /// Refreshes the video list.
-    func refresh() async {
-        await loadVideos(forced: true)
-    }
-}
-
 // MARK: - Preview
 
 #if DEBUG
