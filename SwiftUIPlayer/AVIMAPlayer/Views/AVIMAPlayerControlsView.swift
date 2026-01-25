@@ -1,5 +1,5 @@
 //
-//  IMAPlayerControlsView.swift
+//  AVIMAPlayerControlsView.swift
 //  SwiftUIPlayer
 //
 //  Unified player controls that adapt to playback mode (main video vs advertisement).
@@ -17,11 +17,11 @@ import SwiftUI
 /// **Design:**
 /// Uses consistent UI in both modes with controls dynamically enabled/disabled
 /// based on playback mode, following CLAUDE.md principles for clear user feedback.
-struct IMAPlayerControlsView: View {
+struct AVIMAPlayerControlsView: View {
 
     // MARK: - Properties
 
-    @ObservedObject var viewModel: IMAPlayerViewModel
+    @ObservedObject var viewModel: AVIMAPlayerViewModel
 
     // MARK: - Body
 
@@ -241,7 +241,7 @@ struct IMAPlayerControlsView: View {
 // MARK: - Preview
 
 #if DEBUG
-struct IMAPlayerControlsView_Previews: PreviewProvider {
+struct AVIMAPlayerControlsView_Previews: PreviewProvider {
     static var previews: some View {
         ZStack {
             Color.black
@@ -250,7 +250,7 @@ struct IMAPlayerControlsView_Previews: PreviewProvider {
             VStack {
                 Spacer()
 
-                IMAPlayerControlsView(viewModel: IMAPlayerViewModel())
+                AVIMAPlayerControlsView(viewModel: AVIMAPlayerViewModel())
             }
         }
     }

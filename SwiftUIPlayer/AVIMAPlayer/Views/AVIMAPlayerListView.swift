@@ -1,15 +1,15 @@
 //
-//  IMAPlayerListView.swift
+//  AVIMAPlayerListView.swift
 //  SwiftUIPlayer
 //
-//  List view for selecting videos to play with the IMA Player.
+//  List view for selecting videos to play with the AVIMA Player.
 //
 
 import SwiftUI
 
-/// List view for browsing and selecting videos for the IMA Player.
+/// List view for browsing and selecting videos for the AVIMA Player.
 ///
-/// This is the entry point for the IMA Player tab - it shows available
+/// This is the entry point for the AVIMA Player tab - it shows available
 /// videos that can be played with the custom IMA ad integration.
 ///
 /// **Features:**
@@ -20,12 +20,12 @@ import SwiftUI
 ///
 /// **Data Flow:**
 /// Videos are loaded via ViewModel with complete state tracking.
-/// Each video tap navigates to `IMAVideoPlayerView` with isolated player instance.
-struct IMAPlayerListView: View {
+/// Each video tap navigates to `AVIMAPlayerView` with isolated player instance.
+struct AVIMAPlayerListView: View {
 
     // MARK: - Properties
 
-    @StateObject private var viewModel: IMAPlayerListViewModel
+    @StateObject private var viewModel: AVIMAPlayerListViewModel
 
     // MARK: - Initialization
 
@@ -35,8 +35,8 @@ struct IMAPlayerListView: View {
     /// @MainActor ViewModels (per CLAUDE.md standards).
     ///
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(viewModel: IMAPlayerListViewModel? = nil) {
-        _viewModel = StateObject(wrappedValue: viewModel ?? IMAPlayerListViewModel())
+    init(viewModel: AVIMAPlayerListViewModel? = nil) {
+        _viewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerListViewModel())
     }
 
     // MARK: - Body
@@ -111,7 +111,7 @@ struct IMAPlayerListView: View {
     private func videoList(videos: [IMAVideoItem]) -> some View {
         List(videos) { video in
             NavigationLink {
-                IMAVideoPlayerView(video: video)
+                AVIMAPlayerView(video: video)
             } label: {
                 VideoRowView(video: video)
             }
@@ -195,7 +195,7 @@ private struct VideoRowView: View {
 /// - Closed loops with @Published properties
 /// - Guard clauses to prevent duplicate fetches
 @MainActor
-class IMAPlayerListViewModel: ObservableObject {
+class AVIMAPlayerListViewModel: ObservableObject {
 
     // MARK: - Published State
 
@@ -248,9 +248,9 @@ class IMAPlayerListViewModel: ObservableObject {
 // MARK: - Preview
 
 #if DEBUG
-struct IMAPlayerListView_Previews: PreviewProvider {
+struct AVIMAPlayerListView_Previews: PreviewProvider {
     static var previews: some View {
-        IMAPlayerListView()
+        AVIMAPlayerListView()
     }
 }
 #endif

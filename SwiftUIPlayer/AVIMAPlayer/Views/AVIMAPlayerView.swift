@@ -1,5 +1,5 @@
 //
-//  IMAVideoPlayerView.swift
+//  AVIMAPlayerView.swift
 //  SwiftUIPlayer
 //
 //  Main video player view with IMA ad integration and dual-player architecture.
@@ -18,18 +18,18 @@ import SwiftUI
 ///
 /// **State Management:**
 /// Uses LoadResult pattern from Shared utilities for initialization state.
-/// All player state is managed in `IMAPlayerViewModel` with closed loops.
+/// All player state is managed in `AVIMAPlayerViewModel` with closed loops.
 ///
 /// **User Experience:**
 /// - Consistent controls in both playback modes
 /// - Clear visual feedback for ad vs main content
 /// - Loading states with progress indicators
 /// - Error handling with retry capability
-struct IMAVideoPlayerView: View {
+struct AVIMAPlayerView: View {
 
     // MARK: - Properties
 
-    @StateObject private var viewModel: IMAPlayerViewModel
+    @StateObject private var viewModel: AVIMAPlayerViewModel
 
     let video: IMAVideoItem
 
@@ -44,9 +44,9 @@ struct IMAVideoPlayerView: View {
     ///
     /// - Parameter video: The video to play
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(video: IMAVideoItem, viewModel: IMAPlayerViewModel? = nil) {
+    init(video: IMAVideoItem, viewModel: AVIMAPlayerViewModel? = nil) {
         self.video = video
-        _viewModel = StateObject(wrappedValue: viewModel ?? IMAPlayerViewModel())
+        _viewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerViewModel())
     }
 
     // MARK: - Body
@@ -174,7 +174,7 @@ struct IMAVideoPlayerView: View {
                 VStack {
                     Spacer()
 
-                    IMAPlayerControlsView(viewModel: viewModel)
+                    AVIMAPlayerControlsView(viewModel: viewModel)
                 }
                 .transition(.opacity)
             }
@@ -238,10 +238,10 @@ struct IMAVideoPlayerView: View {
 // MARK: - Preview
 
 #if DEBUG
-struct IMAVideoPlayerView_Previews: PreviewProvider {
+struct AVIMAPlayerView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationStack {
-            IMAVideoPlayerView(video: IMAVideoItem.samples[0])
+            AVIMAPlayerView(video: IMAVideoItem.samples[0])
         }
         .preferredColorScheme(.dark)
     }

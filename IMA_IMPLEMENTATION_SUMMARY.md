@@ -15,7 +15,7 @@ A complete, production-ready IMA video player system with dual-player architectu
    - Includes sample data for testing
    - Properties: id, name, description, thumbnailURL, duration, adTagURL, video
 
-2. **IMAPlayerViewModel.swift** (~700 lines)
+2. **AVIMAPlayerViewModel.swift** (~700 lines)
    - Complete state management with @MainActor
    - Dual-player coordination (main video + ads)
    - PlaybackMode tracking (idle/mainVideo/advertisement)
@@ -28,21 +28,21 @@ A complete, production-ready IMA video player system with dual-player architectu
 
 ### Views (3 files)
 
-3. **IMAPlayerListView.swift** (~240 lines)
+3. **AVIMAPlayerListView.swift** (~240 lines)
    - List of videos with LoadResult pattern
-   - Integrated IMAPlayerListViewModel
+   - Integrated AVAVIMAPlayerListViewModel
    - Pull-to-refresh support
    - Error handling with retry
    - Video metadata display
 
-4. **IMAVideoPlayerView.swift** (~230 lines)
+4. **AVIMAPlayerView.swift** (~230 lines)
    - Main player view with dual-player rendering
    - Loading/error/success states
    - Overlay controls
    - Navigation integration
    - Playback mode indicators
 
-5. **IMAPlayerControlsView.swift** (~230 lines)
+5. **AVIMAPlayerControlsView.swift** (~230 lines)
    - Unified controls for both playback modes
    - Adaptive behavior (ads vs main video)
    - Seekable slider for main video
@@ -54,7 +54,7 @@ A complete, production-ready IMA video player system with dual-player architectu
 
 6. **ContentView.swift**
    - Replaced "Custom IMA" placeholder tab
-   - Added IMAPlayerListView integration
+   - Added AVIMAPlayerListView integration
    - New tab: "IMA Player" with play icon
 
 ### Documentation (2 files)
@@ -78,7 +78,7 @@ A complete, production-ready IMA video player system with dual-player architectu
 
 ```
 ┌─────────────────────────────────────┐
-│     IMAVideoPlayerView              │
+│     AVIMAPlayerView              │
 │  ┌─────────────────────────────┐   │
 │  │  Main Video Player          │   │
 │  │  (Buffers during ads)       │   │
@@ -88,7 +88,7 @@ A complete, production-ready IMA video player system with dual-player architectu
 │  │  (Takes over during ads)    │   │
 │  └─────────────────────────────┘   │
 │  ┌─────────────────────────────┐   │
-│  │  IMAPlayerControlsView      │   │
+│  │  AVIMAPlayerControlsView      │   │
 │  │  (Adapts to mode)           │   │
 │  └─────────────────────────────┘   │
 └─────────────────────────────────────┘
@@ -96,7 +96,7 @@ A complete, production-ready IMA video player system with dual-player architectu
          │ Observes
          │
 ┌────────┴─────────────────────────────┐
-│  IMAPlayerViewModel (@MainActor)     │
+│  AVIMAPlayerViewModel (@MainActor)     │
 │  ┌─────────────────────────────┐    │
 │  │ @Published State:           │    │
 │  │ - playbackMode              │    │
@@ -190,8 +190,8 @@ The new files need to be added to the Xcode project:
 
 ```
 Right-click on appropriate groups:
-- SwiftUIPlayer/Models/ → Add IMAVideoItem.swift, IMAPlayerViewModel.swift
-- SwiftUIPlayer/Views/ → Add IMAPlayerControlsView.swift, IMAPlayerListView.swift, IMAVideoPlayerView.swift
+- SwiftUIPlayer/Models/ → Add IMAVideoItem.swift, AVIMAPlayerViewModel.swift
+- SwiftUIPlayer/Views/ → Add AVIMAPlayerControlsView.swift, AVIMAPlayerListView.swift, AVIMAPlayerView.swift
 ```
 
 ### 2. Add Google IMA SDK
@@ -231,7 +231,7 @@ Add required permissions for ad tracking:
 
 Currently using sample data. To connect real videos:
 
-In `IMAPlayerListViewModel.loadVideos()`:
+In `AVAVIMAPlayerListViewModel.loadVideos()`:
 
 ```swift
 func loadVideos(forced: Bool = false) async {
@@ -261,7 +261,7 @@ private func fetchVideosFromAPI() async throws -> [IMAVideoItem] {
 
 The placeholder player rendering needs to be replaced with actual AVPlayerViewController:
 
-In `IMAVideoPlayerView.playerContent()`, replace placeholders with:
+In `AVIMAPlayerView.playerContent()`, replace placeholders with:
 
 ```swift
 // Main video player

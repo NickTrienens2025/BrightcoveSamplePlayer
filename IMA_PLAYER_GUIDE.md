@@ -44,7 +44,7 @@ Following CLAUDE.md principles, all state is managed through `@Published` proper
 
 ```swift
 @MainActor
-class IMAPlayerViewModel: ObservableObject {
+class AVIMAPlayerViewModel: ObservableObject {
     // Observable state
     @Published private(set) var playbackMode: PlaybackMode = .idle
     @Published private(set) var mainVideoState: PlayerState = .idle
@@ -98,9 +98,9 @@ let videoItem = IMAVideoItem(
 )
 ```
 
-### 2. IMAPlayerViewModel
+### 2. AVIMAPlayerViewModel
 
-**File:** `Models/IMAPlayerViewModel.swift`
+**File:** `Models/AVIMAPlayerViewModel.swift`
 
 Main ViewModel managing all player state and logic.
 
@@ -147,9 +147,9 @@ enum PlayerState {
 | `seek(to:)` | Seeks to time position | **Only during main video** |
 | `skipAd()` | Skips current ad | **Only for skippable ads** |
 
-### 3. IMAPlayerControlsView
+### 3. AVIMAPlayerControlsView
 
-**File:** `Views/IMAPlayerControlsView.swift`
+**File:** `Views/AVIMAPlayerControlsView.swift`
 
 Unified controls that adapt to playback mode.
 
@@ -169,9 +169,9 @@ Unified controls that adapt to playback mode.
 | Mute | ✅ Enabled | ✅ Enabled |
 | Skip | ❌ Hidden | ✅ If skippable |
 
-### 4. IMAVideoPlayerView
+### 4. AVIMAPlayerView
 
-**File:** `Views/IMAVideoPlayerView.swift`
+**File:** `Views/AVIMAPlayerView.swift`
 
 Main player view with complete UX flow.
 
@@ -200,9 +200,9 @@ case .success:
 }
 ```
 
-### 5. IMAPlayerListView
+### 5. AVIMAPlayerListView
 
-**File:** `Views/IMAPlayerListView.swift`
+**File:** `Views/AVIMAPlayerListView.swift`
 
 List view displaying available videos.
 
@@ -217,7 +217,7 @@ List view displaying available videos.
 
 ```swift
 @MainActor
-class IMAPlayerListViewModel: ObservableObject {
+class AVAVIMAPlayerListViewModel: ObservableObject {
     @Published private(set) var videosLoadResult: LoadResult<[IMAVideoItem]> = .notStarted
 
     func loadVideos(forced: Bool = false) async
@@ -234,7 +234,7 @@ class IMAPlayerListViewModel: ObservableObject {
 1. **Add to ContentView:**
 
 ```swift
-IMAPlayerListView()
+AVIMAPlayerListView()
     .tabItem {
         Label("IMA Player", systemImage: "play.rectangle.fill")
     }
@@ -254,7 +254,7 @@ IMAPlayerListView()
 ### Programmatic Playback
 
 ```swift
-let viewModel = IMAPlayerViewModel()
+let viewModel = AVIMAPlayerViewModel()
 let video = IMAVideoItem(...)
 
 // Load video
@@ -356,7 +356,7 @@ if viewModel.playbackMode == .advertisement {
 ```swift
 @MainActor
 func testPlaybackStateTransitions() async throws {
-    let viewModel = IMAPlayerViewModel()
+    let viewModel = AVIMAPlayerViewModel()
     let video = IMAVideoItem.samples[0]
 
     // Test loading
@@ -374,7 +374,7 @@ func testPlaybackStateTransitions() async throws {
 
 @MainActor
 func testAdRestrictions() {
-    let viewModel = IMAPlayerViewModel()
+    let viewModel = AVIMAPlayerViewModel()
 
     // Simulate ad mode
     // (requires mocking IMA callbacks)
@@ -390,14 +390,14 @@ Use SwiftUI previews for visual testing:
 
 ```swift
 #Preview("Loading State") {
-    IMAVideoPlayerView(video: .samples[0])
+    AVIMAPlayerView(video: .samples[0])
         // Previews show loading state initially
 }
 
 #Preview("Playing State") {
-    let viewModel = IMAPlayerViewModel()
+    let viewModel = AVIMAPlayerViewModel()
     // Configure viewModel to simulate playing state
-    return IMAVideoPlayerView(video: .samples[0], viewModel: viewModel)
+    return AVIMAPlayerView(video: .samples[0], viewModel: viewModel)
 }
 ```
 

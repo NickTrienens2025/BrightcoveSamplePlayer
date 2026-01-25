@@ -1,5 +1,5 @@
 //
-//  IMAPlayerViewModel.swift
+//  AVIMAPlayerViewModel.swift
 //  SwiftUIPlayer
 //
 //  ViewModel for managing IMA video player state with dual-player architecture.
@@ -32,7 +32,7 @@ import BrightcovePlayerSDK
 /// - During ads: Only pause/play and mute allowed
 /// - During main content: Full controls available
 @MainActor
-class IMAPlayerViewModel: ObservableObject {
+class AVIMAPlayerViewModel: ObservableObject {
 
     // MARK: - Nested Types
 
@@ -542,7 +542,7 @@ class IMAPlayerViewModel: ObservableObject {
 
 // MARK: - BCOVPlaybackControllerDelegate
 
-extension IMAPlayerViewModel: BCOVPlaybackControllerDelegate {
+extension AVIMAPlayerViewModel: BCOVPlaybackControllerDelegate {
 
     func playbackController(
         _ controller: BCOVPlaybackController!,
@@ -589,7 +589,7 @@ extension IMAPlayerViewModel: BCOVPlaybackControllerDelegate {
 
 // MARK: - IMAAdsLoaderDelegate
 
-extension IMAPlayerViewModel: IMAAdsLoaderDelegate {
+extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
 
     func adsLoader(_ loader: IMAAdsLoader, adsLoadedWith adsLoadedData: IMAAdsLoadedData) {
         let manager = adsLoadedData.adsManager
@@ -614,7 +614,7 @@ extension IMAPlayerViewModel: IMAAdsLoaderDelegate {
 
 // MARK: - IMAAdsManagerDelegate
 
-extension IMAPlayerViewModel: IMAAdsManagerDelegate {
+extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
 
     func adsManager(_ adsManager: IMAAdsManager, didReceive event: IMAAdEvent) {
         switch event.type {

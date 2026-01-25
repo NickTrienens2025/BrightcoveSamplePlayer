@@ -1,5 +1,5 @@
 //
-//  IMAPlayerListViewModel.swift
+//  AVIMAPlayerListViewModel.swift
 //  SwiftUIPlayer
 //
 //  ViewModel managing the IMA Player video library state.
@@ -28,7 +28,7 @@ import Foundation
 /// - Computed properties for derived state
 /// - Complete closed loops with @Published properties
 @MainActor
-class IMAPlayerListViewModel: ObservableObject {
+class AVIMAPlayerListViewModel: ObservableObject {
 
     // MARK: - Published State (Observable by View)
 

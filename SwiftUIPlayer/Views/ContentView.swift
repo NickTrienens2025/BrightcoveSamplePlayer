@@ -29,9 +29,9 @@ struct ContentView: View {
                 }
                 .tag(Tab.videos)
 
-            IMAPlayerListView()
+            AVIMAPlayerListView()
                 .tabItem {
-                    Label("IMA Player", systemImage: "play.rectangle.fill")
+                    Label("AVIMA Player", systemImage: "play.rectangle.fill")
                 }
                 .tag(Tab.imaVideos)
         }
