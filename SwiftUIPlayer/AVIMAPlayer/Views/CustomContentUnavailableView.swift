@@ -120,7 +120,7 @@ struct CustomContentUnavailableView_Previews: PreviewProvider {
                 description: "Check your internet connection and try again."
             ) {
                 Button("Retry") {
-                    print("Retry tapped")
+                    debugPrintWithTimestamp("Retry tapped")
                 }
                 .buttonStyle(.borderedProminent)
             }

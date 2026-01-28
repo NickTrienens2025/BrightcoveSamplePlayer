@@ -33,14 +33,14 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        print("🎬 BCOVPUIIMAPlayerViewController - viewDidLoad called")
+        debugPrintWithTimestamp("🎬 BCOVPUIIMAPlayerViewController - viewDidLoad called")
 
         // Setup IMA playback controller after view is loaded
         setupIMAPlaybackController()
 
         // Load video if one was set
         if let video = videoToPlay {
-            print("📹 Loading video from viewDidLoad")
+            debugPrintWithTimestamp("📹 Loading video from viewDidLoad")
             imaPlaybackController?.setVideos([video])
         }
     }
@@ -48,22 +48,22 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
     // MARK: - Public Methods
 
     func setVideo(_ video: BCOVVideo) {
-        print("📹 setVideo called with video ID: \(video.properties[BCOVVideo.PropertyKeyId] ?? "unknown")")
+        debugPrintWithTimestamp("📹 setVideo called with video ID: \(video.properties[BCOVVideo.PropertyKeyId] ?? "unknown")")
         self.videoToPlay = video
 
         // If view is already loaded, set video immediately
         if isViewLoaded, let controller = imaPlaybackController {
-            print("📹 View already loaded, setting video immediately")
+            debugPrintWithTimestamp("📹 View already loaded, setting video immediately")
             controller.setVideos([video])
         } else {
-            print("📹 View not loaded yet, will set video in viewDidLoad")
+            debugPrintWithTimestamp("📹 View not loaded yet, will set video in viewDidLoad")
         }
     }
 
     // MARK: - Initialization
 
     convenience init(playerModel: PlayerModel) {
-        print("🎬 BCOVPUIIMAPlayerViewController - Starting initialization")
+        debugPrintWithTimestamp("🎬 BCOVPUIIMAPlayerViewController - Starting initialization")
 
         // Configure player view options
         let options = BCOVPUIPlayerViewOptions()
@@ -77,11 +77,11 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
         self.playerModel = playerModel
         self.delegate = playerModel
 
-        print("🎬 BCOVPUIIMAPlayerViewController - Basic initialization complete")
+        debugPrintWithTimestamp("🎬 BCOVPUIIMAPlayerViewController - Basic initialization complete")
     }
 
     private func setupIMAPlaybackController() {
-        print("🎬 BCOVPUIIMAPlayerViewController - Setting up IMA playback controller")
+        debugPrintWithTimestamp("🎬 BCOVPUIIMAPlayerViewController - Setting up IMA playback controller")
 
         // Configure IMA settings
         let imaSettings = IMASettings()
@@ -90,7 +90,7 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
         } else {
             imaSettings.language = Locale.current.languageCode ?? "en"
         }
-        print("🌐 IMA language set to: \(imaSettings.language) ")
+        debugPrintWithTimestamp("🌐 IMA language set to: \(imaSettings.language) ")
 
         // Configure IMA rendering settings
         let renderSettings = IMAAdsRenderingSettings()
@@ -100,13 +100,13 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
         let policy = BCOVCuePointProgressPolicy(processingCuePoints: .processFinalCuePoint,
                                                 resumingPlaybackFrom: .fromContentPlayhead,
                                                 ignoringPreviouslyProcessedCuePoints: false)
-        print("⚙️ Cue point policy configured")
+        debugPrintWithTimestamp("⚙️ Cue point policy configured")
 
         // Configure ads request policy
         // This uses the same VAST ad tag URL for all cue points
         let adsRequestPolicy = BCOVIMAAdsRequestPolicy(fromCuePointPropertiesWithAdTag: kVASTAdTagURL,
                                                        adsCuePointProgressPolicy: policy)
-        print("📺 VAST Ad Tag URL: \(kVASTAdTagURL)")
+        debugPrintWithTimestamp("📺 VAST Ad Tag URL: \(kVASTAdTagURL)")
 
         // Setup session providers
         let sdkManager = BCOVPlayerSDKManager.sharedManager()
@@ -116,21 +116,21 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
                                                    applicationId: nil)
         let fpsSessionProvider = sdkManager.createFairPlaySessionProvider(withAuthorizationProxy: authProxy,
                                                                           upstreamSessionProvider: nil)
-        print("🔐 FairPlay session provider created")
+        debugPrintWithTimestamp("🔐 FairPlay session provider created")
 
         // Now we can access the ad container from the player view (viewDidLoad has been called)
         guard let adContainerView = self.playerView?.contentOverlayView else {
-            print("❌ Error: Could not get ad container view from player view")
-            print("   playerView exists: \(self.playerView != nil)")
+            debugPrintWithTimestamp("❌ Error: Could not get ad container view from player view")
+            debugPrintWithTimestamp("   playerView exists: \(self.playerView != nil)")
             return
         }
-        print("✅ Ad container view obtained: \(adContainerView)")
+        debugPrintWithTimestamp("✅ Ad container view obtained: \(adContainerView)")
 
         // Create IMA session provider options
         let imaPlaybackSessionOptions: [String: Any] = [
             kBCOVIMAOptionIMAPlaybackSessionDelegateKey: self
         ]
-        print("🎯 IMA playback session options configured with delegate")
+        debugPrintWithTimestamp("🎯 IMA playback session options configured with delegate")
 
         // Create IMA session provider with the proper ad container
         guard let imaSessionProvider = sdkManager.createIMASessionProvider(with: imaSettings,
@@ -141,10 +141,10 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
                                                                            companionSlots: nil,
                                                                            upstreamSessionProvider: fpsSessionProvider,
                                                                            options: imaPlaybackSessionOptions) else {
-            print("❌ Error: Failed to create IMA session provider")
+            debugPrintWithTimestamp("❌ Error: Failed to create IMA session provider")
             return
         }
-        print("✅ IMA session provider created successfully")
+        debugPrintWithTimestamp("✅ IMA session provider created successfully")
 
         // Create the IMA-enabled playback controller
         let playbackController = sdkManager.createPlaybackController(withSessionProvider: imaSessionProvider,
@@ -153,20 +153,20 @@ class BCOVPUIIMAPlayerViewController: BCOVPUIPlayerViewController {
         playbackController.isAutoPlay = true
         playbackController.delegate = self
         playbackController.options = [kBCOVAVPlayerViewControllerCompatibilityKey: false]
-        print("✅ IMA-enabled playback controller created")
+        debugPrintWithTimestamp("✅ IMA-enabled playback controller created")
 
         // Store the controller
         self.imaPlaybackController = playbackController
 
         // Set the playback controller on the playerView (this is the key!)
         self.playerView?.playbackController = playbackController
-        print("✅ Playback controller set on playerView")
-        print("   playerView exists: \(self.playerView != nil)")
-        print("   playerView.playbackController exists: \(self.playerView?.playbackController != nil)")
+        debugPrintWithTimestamp("✅ Playback controller set on playerView")
+        debugPrintWithTimestamp("   playerView exists: \(self.playerView != nil)")
+        debugPrintWithTimestamp("   playerView.playbackController exists: \(self.playerView?.playbackController != nil)")
 
         // Update rendering settings with proper presenting controller
         renderSettings.linkOpenerPresentingController = self
-        print("🎬 BCOVPUIIMAPlayerViewController - IMA setup complete")
+        debugPrintWithTimestamp("🎬 BCOVPUIIMAPlayerViewController - IMA setup complete")
     }
 }
 
@@ -176,27 +176,27 @@ extension BCOVPUIIMAPlayerViewController: BCOVPlaybackControllerDelegate {
 
     func playbackController(_ controller: BCOVPlaybackController!,
                             didAdvanceTo session: BCOVPlaybackSession!) {
-        print("📹 BCOVPUIIMAPlayerViewController - Advanced to new session")
-        print("   Session: \(String(describing: session))")
-        print("   Video: \(String(describing: session?.video))")
+        debugPrintWithTimestamp("📹 BCOVPUIIMAPlayerViewController - Advanced to new session")
+        debugPrintWithTimestamp("   Session: \(String(describing: session))")
+        debugPrintWithTimestamp("   Video: \(String(describing: session?.video))")
 
         // The ad container is automatically configured by the IMA plugin
         if playerView?.contentOverlayView != nil {
-            print("✅ BCOVPUIIMAPlayerViewController - Ad container configured")
+            debugPrintWithTimestamp("✅ BCOVPUIIMAPlayerViewController - Ad container configured")
         } else {
-            print("❌ BCOVPUIIMAPlayerViewController - Ad container NOT configured")
+            debugPrintWithTimestamp("❌ BCOVPUIIMAPlayerViewController - Ad container NOT configured")
         }
 
         // Check for cue points
         if let video = session?.video, let cuePoints = video.cuePoints {
-            print("📍 Video has \(cuePoints.count) cue points:")
+            debugPrintWithTimestamp("📍 Video has \(cuePoints.count) cue points:")
             for (index, cuePoint) in cuePoints.array.enumerated() {
                 if let cp = cuePoint as? BCOVCuePoint {
-                    print("   [\(index)] Type: \(cp.type ?? "unknown"), Position: \(cp.position.seconds)s, Properties: \(cp.properties)")
+                    debugPrintWithTimestamp("   [\(index)] Type: \(cp.type ?? "unknown"), Position: \(cp.position.seconds)s, Properties: \(cp.properties)")
                 }
             }
         } else {
-            print("⚠️ Video has NO cue points - ads will not play!")
+            debugPrintWithTimestamp("⚠️ Video has NO cue points - ads will not play!")
         }
     }
 
@@ -205,17 +205,17 @@ extension BCOVPUIIMAPlayerViewController: BCOVPlaybackControllerDelegate {
                             didReceive lifecycleEvent: BCOVPlaybackSessionLifecycleEvent!) {
 
         let eventType = lifecycleEvent.eventType
-        print("🔄 Lifecycle Event: \(eventType)")
+        debugPrintWithTimestamp("🔄 Lifecycle Event: \(eventType)")
 
         if kBCOVPlaybackSessionLifecycleEventFail == lifecycleEvent.eventType,
            let error = lifecycleEvent.properties["error"] as? NSError {
-            print("❌ BCOVPUIIMAPlayerViewController - Playback error: \(error.localizedDescription)")
+            debugPrintWithTimestamp("❌ BCOVPUIIMAPlayerViewController - Playback error: \(error.localizedDescription)")
         }
 
         // Log IMA-specific events
         if eventType.contains("kBCOVIMA") {
-            print("📺 IMA Event: \(eventType)")
-            print("   Properties: \(lifecycleEvent.properties)")
+            debugPrintWithTimestamp("📺 IMA Event: \(eventType)")
+            debugPrintWithTimestamp("   Properties: \(lifecycleEvent.properties)")
         }
     }
 }
@@ -227,27 +227,27 @@ extension BCOVPUIIMAPlayerViewController: BCOVPlaybackControllerAdsDelegate {
     func playbackController(_ controller: BCOVPlaybackController,
                             playbackSession session: BCOVPlaybackSession,
                             didEnterAdSequence adSequence: BCOVAdSequence) {
-        print("📺 BCOVPUIIMAPlayerViewController - ⏯️ ENTERING AD SEQUENCE")
-        print("   Ad sequence: \(adSequence)")
+        debugPrintWithTimestamp("📺 BCOVPUIIMAPlayerViewController - ⏯️ ENTERING AD SEQUENCE")
+        debugPrintWithTimestamp("   Ad sequence: \(adSequence)")
     }
 
     func playbackController(_ controller: BCOVPlaybackController,
                             playbackSession session: BCOVPlaybackSession,
                             didExitAdSequence adSequence: BCOVAdSequence) {
-        print("📺 BCOVPUIIMAPlayerViewController - ⏹️ EXITING AD SEQUENCE")
+        debugPrintWithTimestamp("📺 BCOVPUIIMAPlayerViewController - ⏹️ EXITING AD SEQUENCE")
     }
 
     func playbackController(_ controller: BCOVPlaybackController,
                             playbackSession session: BCOVPlaybackSession,
                             didEnterAd ad: BCOVAd) {
-        print("📺 BCOVPUIIMAPlayerViewController - ▶️ ENTERING AD")
-        print("   Ad: \(ad)")
+        debugPrintWithTimestamp("📺 BCOVPUIIMAPlayerViewController - ▶️ ENTERING AD")
+        debugPrintWithTimestamp("   Ad: \(ad)")
     }
 
     func playbackController(_ controller: BCOVPlaybackController,
                             playbackSession session: BCOVPlaybackSession,
                             didExitAd ad: BCOVAd) {
-        print("📺 BCOVPUIIMAPlayerViewController - ⏹️ EXITING AD")
+        debugPrintWithTimestamp("📺 BCOVPUIIMAPlayerViewController - ⏹️ EXITING AD")
     }
 }
 
@@ -271,10 +271,10 @@ extension BCOVPUIIMAPlayerViewController: BCOVIMAPlaybackSessionDelegate {
         // Customize the ads request before loading
         // For demo purposes, increase the VAST ad load timeout
         adsRequest.vastLoadTimeout = 3000.0
-        print("📺 BCOVPUIIMAPlayerViewController - 🎯 willCallIMAAdsLoaderRequestAds")
-        print("   Position: \(position)s")
-        print("   Ad Tag URL: \(adsRequest.adTagUrl ?? "nil")")
-        print("   VAST Load Timeout: \(String(format: "%.1f", adsRequest.vastLoadTimeout))ms")
+        debugPrintWithTimestamp("📺 BCOVPUIIMAPlayerViewController - 🎯 willCallIMAAdsLoaderRequestAds")
+        debugPrintWithTimestamp("   Position: \(position)s")
+        debugPrintWithTimestamp("   Ad Tag URL: \(adsRequest.adTagUrl ?? "nil")")
+        debugPrintWithTimestamp("   VAST Load Timeout: \(String(format: "%.1f", adsRequest.vastLoadTimeout))ms")
     }
 }
 
@@ -283,11 +283,11 @@ extension BCOVPUIIMAPlayerViewController: BCOVIMAPlaybackSessionDelegate {
 extension BCOVPUIIMAPlayerViewController: IMALinkOpenerDelegate {
 
     func linkOpenerDidOpen(inAppLink linkOpener: NSObject) {
-        print("BCOVPUIIMAPlayerViewController - Link opener did open in-app link")
+        debugPrintWithTimestamp("BCOVPUIIMAPlayerViewController - Link opener did open in-app link")
     }
 
     func linkOpenerDidClose(inAppLink linkOpener: NSObject) {
-        print("BCOVPUIIMAPlayerViewController - Link opener did close in-app link")
+        debugPrintWithTimestamp("BCOVPUIIMAPlayerViewController - Link opener did close in-app link")
 
         // Resume ad playback after closing the in-app browser
         playbackController?.resumeAd()
@@ -322,24 +322,24 @@ struct BCOVAdsPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let video: BCOVVideo
 
     func makeUIViewController(context: Context) -> BCOVPUIIMAPlayerViewController {
-        print("🎬 BCOVAdsPlayerViewControllerRepresentable - makeUIViewController called")
+        debugPrintWithTimestamp("🎬 BCOVAdsPlayerViewControllerRepresentable - makeUIViewController called")
 
         let playerViewController = BCOVPUIIMAPlayerViewController(playerModel: playerModel)
-        print("✅ Player view controller created")
+        debugPrintWithTimestamp("✅ Player view controller created")
 
         // Update video with IMA ad cue points
-        print("📹 Original video: \(video)")
-        print("   Video ID: \(video.properties[BCOVVideo.PropertyKeyId] ?? "unknown")")
-        print("   Original cue points: \(video.cuePoints?.count ?? 0)")
+        debugPrintWithTimestamp("📹 Original video: \(video)")
+        debugPrintWithTimestamp("   Video ID: \(video.properties[BCOVVideo.PropertyKeyId] ?? "unknown")")
+        debugPrintWithTimestamp("   Original cue points: \(video.cuePoints?.count ?? 0)")
 
         let videoWithAds = video.updateVideo(useAdTagsInCuePoints: true)
-        print("📹 Video updated with ads")
-        print("   Updated cue points: \(videoWithAds.cuePoints?.count ?? 0)")
+        debugPrintWithTimestamp("📹 Video updated with ads")
+        debugPrintWithTimestamp("   Updated cue points: \(videoWithAds.cuePoints?.count ?? 0)")
 
         if let cuePoints = videoWithAds.cuePoints {
             for (index, cuePoint) in cuePoints.array.enumerated() {
                 if let cp = cuePoint as? BCOVCuePoint {
-                    print("   [\(index)] Type: \(cp.type ?? "unknown"), Position: \(cp.position.seconds)s, Properties: \(cp.properties)")
+                    debugPrintWithTimestamp("   [\(index)] Type: \(cp.type ?? "unknown"), Position: \(cp.position.seconds)s, Properties: \(cp.properties)")
                 }
             }
         }

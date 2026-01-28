@@ -87,7 +87,7 @@ extension PlayerModel: BCOVPlaybackControllerDelegate {
             avpvc.player = player
         }
 
-        print("PlayerModel - Advanced to new session.")
+        debugPrintWithTimestamp("PlayerModel - Advanced to new session.")
     }
 
     func playbackController(_ controller: BCOVPlaybackController!,
@@ -97,7 +97,7 @@ extension PlayerModel: BCOVPlaybackControllerDelegate {
         if kBCOVPlaybackSessionLifecycleEventFail == lifecycleEvent.eventType,
            let error = lifecycleEvent.properties["error"] as? NSError {
             // Report any errors that may have occurred with playback.
-            print("PlayerModel - Playback error: \(error.localizedDescription)")
+            debugPrintWithTimestamp("PlayerModel - Playback error: \(error.localizedDescription)")
         }
     }
 

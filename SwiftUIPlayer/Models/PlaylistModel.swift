@@ -42,7 +42,7 @@ final class PlaylistModel: ObservableObject {
 
             guard let playlist else {
                 if let error {
-                    print("PlaylistModel - Error retrieving video playlist: \(error.localizedDescription)")
+                    debugPrintWithTimestamp("PlaylistModel - Error retrieving video playlist: \(error.localizedDescription)")
                 }
                 
                 return

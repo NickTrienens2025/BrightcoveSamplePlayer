@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                                                             mode: .moviePlayback,
                                                             options: .duckOthers)
         } catch {
-            print("AppDelegate - Error setting AVAudioSession category. Because of this, there may be no sound. \(error)")
+            debugPrintWithTimestamp("AppDelegate - Error setting AVAudioSession category. Because of this, there may be no sound. \(error)")
         }
 
         return true

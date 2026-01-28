@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import BrightcovePlayerSDK
 
 /// ViewModel managing the IMA Player video library state.
 ///
@@ -73,6 +74,17 @@ class AVIMAPlayerListViewModel: ObservableObject {
         videosLoadResult.error
     }
 
+    // MARK: - Private Properties
+
+    /// Brightcove playback service for fetching videos
+    private lazy var playbackService: BCOVPlaybackService = {
+        let factory = BCOVPlaybackServiceRequestFactory(
+            withAccountId: kAccountId,
+            policyKey: kPolicyKey
+        )
+        return BCOVPlaybackService(withRequestFactory: factory)
+    }()
+
     // MARK: - Initialization
 
     init() {
@@ -81,7 +93,7 @@ class AVIMAPlayerListViewModel: ObservableObject {
 
     // MARK: - Public API (Called by View)
 
-    /// Loads the video list.
+    /// Loads the video list from Brightcove.
     ///
     /// Implements smart loading behavior:
     /// - Skips if already loaded (unless forced)
@@ -105,20 +117,12 @@ class AVIMAPlayerListViewModel: ObservableObject {
 
         videosLoadResult = .loading
 
-        // Simulate network delay for demo
-        // In production, replace with actual API call
-        try? await Task.sleep(for: .milliseconds(500))
-
-        // For now, use sample data
-        // TODO: Replace with actual API integration
-        // Example:
-        // do {
-        //     let videos = try await fetchVideosFromAPI()
-        //     videosLoadResult = .success(videos)
-        // } catch {
-        //     videosLoadResult = .error(error)
-        // }
-        videosLoadResult = .success(AVIMAVideoItem.samples)
+        do {
+            let videos = try await fetchVideosFromBrightcove()
+            videosLoadResult = .success(videos)
+        } catch {
+            videosLoadResult = .error(error)
+        }
     }
 
     /// Refreshes the video list.
@@ -138,6 +142,45 @@ class AVIMAPlayerListViewModel: ObservableObject {
 
     // MARK: - Private Implementation
 
-    // Future: Add private helper methods for API integration
-    // private func fetchVideosFromAPI() async throws -> [AVIMAVideoItem] { ... }
+    /// Fetches videos from Brightcove API.
+    ///
+    /// Uses the same playlist as the main PlaylistModel (kPlaylistRefId).
+    /// Converts BCOVVideo objects to AVIMAVideoItem with default ad tags.
+    ///
+    /// - Returns: Array of AVIMAVideoItem objects
+    /// - Throws: Error if playlist fetch fails or has no videos
+    private func fetchVideosFromBrightcove() async throws -> [AVIMAVideoItem] {
+        return try await withCheckedThrowingContinuation { continuation in
+            let configuration = [
+                BCOVPlaybackService.ConfigurationKeyAssetReferenceID: kPlaylistRefId
+            ]
+
+            playbackService.findPlaylist(
+                withConfiguration: configuration,
+                queryParameters: nil
+            ) { (playlist: BCOVPlaylist?, jsonResponse: Any?, error: Error?) in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let playlist = playlist else {
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "AVIMAPlayerListViewModel",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: "No playlist returned"]
+                        )
+                    )
+                    return
+                }
+
+                let videos = playlist.videos.compactMap { bcovVideo -> AVIMAVideoItem? in
+                    AVIMAVideoItem.from(video: bcovVideo)
+                }
+
+                continuation.resume(returning: videos)
+            }
+        }
+    }
 }

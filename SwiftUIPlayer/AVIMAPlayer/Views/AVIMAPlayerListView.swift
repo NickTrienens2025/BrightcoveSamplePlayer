@@ -111,7 +111,8 @@ struct AVIMAPlayerListView: View {
     private func videoList(videos: [AVIMAVideoItem]) -> some View {
         List(videos) { video in
             NavigationLink {
-                AVIMAPlayerView(video: video)
+                // Pass just the video ID - the player will fetch the full video
+                AVIMAPlayerView(videoId: video.id)
             } label: {
                 VideoRowView(video: video)
             }
