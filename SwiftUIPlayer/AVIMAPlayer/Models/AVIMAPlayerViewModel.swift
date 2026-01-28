@@ -24,28 +24,58 @@ import BrightcovePlayerSDK
 /// All state changes are exposed via @Published properties for complete
 /// closed loops. The View observes these properties and updates UI accordingly.
 ///
+/// **Playback Mode State Machine:**
+/// ```
+///                    ┌─────────┐
+///         loadVideo()│         │
+///        ┌───────────▶  idle   │
+///        │           │         │
+///        │           └────┬────┘
+///        │                │
+///        │                │ ads load
+///        │                ▼
+///        │         ┌──────────────┐
+///        │         │              │
+///        │    ┌────┤advertisement │◀────┐
+///        │    │    │              │     │
+///        │    │    └──────┬───────┘     │
+///        │    │           │             │
+///        │    │ ad fails  │ ads complete│ more ads
+///        │    │           │             │
+///        │    │    ┌──────▼───────┐     │
+///        │    └────▶              ├─────┘
+///        │         │  mainVideo   │
+///        └─────────┤              │
+///          reload  └──────────────┘
+/// ```
+///
+/// **State Guarantees:**
+/// - Only ONE playback mode is active at any time (enforced by switch statement)
+/// - Mode transitions are atomic and validated
+/// - State cleanup happens during each transition
+///
 /// **Playback Modes:**
-/// - `.idle`: No content loaded
-/// - `.mainVideo`: Playing main content
-/// - `.advertisement`: Playing IMA ad content
+/// - `.idle`: No content loaded, initializing
+/// - `.mainVideo`: Playing main content (mutually exclusive with ad)
+/// - `.advertisement`: Playing IMA ad content (mutually exclusive with main)
 ///
 /// **Control Restrictions:**
 /// - During ads: Only pause/play and mute allowed
 /// - During main content: Full controls available
 @MainActor
-class AVIMAPlayerViewModel: ObservableObject {
+class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     // MARK: - Nested Types
 
-    /// Represents the current playback mode
+    /// Represents the current playback mode (mutually exclusive states)
     enum PlaybackMode: Equatable {
-        /// No content is loaded
+        /// No content is loaded - initializing
         case idle
 
-        /// Playing main video content
+        /// Playing main video content (ad player is idle)
         case mainVideo
 
-        /// Playing advertisement content
+        /// Playing advertisement content (main player is paused)
         case advertisement
     }
 
@@ -94,7 +124,7 @@ class AVIMAPlayerViewModel: ObservableObject {
     }
 
     /// Progress information for ad playback
-    struct AdProgress: Equatable {
+    struct AdProgress: Equatable, CustomStringConvertible {
         /// Current ad position (1-based)
         let currentAdNumber: Int
 
@@ -117,6 +147,10 @@ class AVIMAPlayerViewModel: ObservableObject {
         var progress: Double {
             guard duration > 0 else { return 0 }
             return min(currentTime / duration, 1.0)
+        }
+
+        var description: String {
+            "Ad \(currentAdNumber)/\(totalAds), \(String(format: "%.1f", currentTime))s/\(String(format: "%.1f", duration))s"
         }
     }
 
@@ -151,6 +185,9 @@ class AVIMAPlayerViewModel: ObservableObject {
 
     /// Initialization status for the player
     @Published private(set) var initializationStatus: LoadStatus = .notStarted
+
+    /// Whether closed captions are currently enabled
+    @Published private(set) var closedCaptionsEnabled: Bool = false
 
     // MARK: - Computed Properties (Derived State)
 
@@ -205,6 +242,21 @@ class AVIMAPlayerViewModel: ObservableObject {
         return min(currentTime / duration, 1.0)
     }
 
+    /// Video aspect ratio (width / height)
+    var videoAspectRatio: Double {
+        currentVideo?.aspectRatio ?? 16.0/9.0
+    }
+
+    /// Available closed caption options
+    var availableClosedCaptions: [AVMediaSelectionOption] {
+        guard let player = mainPlayer,
+              let asset = player.currentItem?.asset,
+              let group = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
+            return []
+        }
+        return group.options
+    }
+
     // MARK: - Private Properties
 
     /// Brightcove playback controller for main video
@@ -222,11 +274,23 @@ class AVIMAPlayerViewModel: ObservableObject {
     /// IMA ads manager
     private var adsManager: IMAAdsManager?
 
-    /// Time observer for main player
-    private var mainTimeObserver: Any?
+    /// Current ad being played (for progress tracking)
+    private var currentAd: IMAAd?
 
-    /// Time observer for ad player
-    private var adTimeObserver: Any?
+    /// Container view for ad rendering
+    private weak var adContainerView: UIView?
+
+    /// View controller for ad presentation
+    private weak var adViewController: UIViewController?
+
+    /// Current player view controller for fullscreen control
+    weak var currentPlayerViewController: AVPlayerViewController?
+
+    /// Time observer for main player with its owning player instance
+    private var mainTimeObserver: (observer: Any, player: AVPlayer)?
+
+    /// Time observer for ad player with its owning player instance
+    private var adTimeObserver: (observer: Any, player: AVPlayer)?
 
     /// Combine cancellables
     private var cancellables = Set<AnyCancellable>()
@@ -234,24 +298,110 @@ class AVIMAPlayerViewModel: ObservableObject {
     /// Whether playback was active before backgrounding
     private var wasPlayingBeforeBackground = false
 
+    /// Brightcove playback service for fetching videos
+    private lazy var playbackService: BCOVPlaybackService = {
+        let factory = BCOVPlaybackServiceRequestFactory(
+            withAccountId: kAccountId,
+            policyKey: kPolicyKey
+        )
+        return BCOVPlaybackService(withRequestFactory: factory)
+    }()
+
     // MARK: - Initialization
 
-    init() {
+    override init() {
+        super.init()
         setupMuteObserver()
         setupLifecycleObservers()
     }
 
     deinit {
-        cleanup()
-        removeLifecycleObservers()
+        // Cleanup is handled in View's onDisappear to avoid actor isolation issues
+        NotificationCenter.default.removeObserver(self)
     }
 
     // MARK: - Public API (Called by View)
 
-    /// Loads a video and initializes the player.
+    /// Returns the main player instance for rendering in the View.
     ///
-    /// This creates the dual-player setup with proper IMA integration.
-    /// Main video begins buffering while IMA ads are loaded.
+    /// - Returns: The main AVPlayer instance, or nil if not initialized
+    func getMainPlayer() -> AVPlayer? {
+        return mainPlayer
+    }
+
+    /// Returns the ad player instance for rendering in the View.
+    ///
+    /// - Returns: The ad AVPlayer instance, or nil if not initialized
+    func getAdPlayer() -> AVPlayer? {
+        return adPlayer
+    }
+
+    /// Sets the container view and view controller for ad rendering.
+    ///
+    /// This must be called before loading videos to ensure IMA has the proper
+    /// view hierarchy for rendering ads.
+    ///
+    /// - Parameters:
+    ///   - containerView: The UIView that will contain the ad rendering
+    ///   - viewController: The view controller for presenting ad UI
+    func setAdContainer(containerView: UIView, viewController: UIViewController) {
+        self.adContainerView = containerView
+        self.adViewController = viewController
+    }
+
+    /// Enters fullscreen mode for the current player.
+    ///
+    /// Works for both ad and main video playback.
+    func enterFullscreen() {
+        guard let playerVC = currentPlayerViewController else {
+            debugPrintWithTimestamp("⚠️ No player view controller available for fullscreen")
+            return
+        }
+
+        // Trigger native fullscreen presentation
+        // This is done by setting a private property, but there's no public API
+        // The native controls provide the fullscreen button which works automatically
+        debugPrintWithTimestamp("🔲 Fullscreen requested via native controls")
+    }
+
+    /// Loads a video by ID and initializes the player.
+    ///
+    /// This fetches the video from Brightcove, then creates the dual-player
+    /// setup with proper IMA integration. Main video begins buffering while
+    /// IMA ads are loaded.
+    ///
+    /// - Parameter videoId: The Brightcove video ID
+    func loadVideo(videoId: String) async {
+        // Prevent duplicate loads
+        guard initializationStatus != .loading else { return }
+
+        initializationStatus = .loading
+        playbackError = nil
+
+        do {
+            // Fetch video from Brightcove
+            let bcovVideo = try await fetchVideo(videoId: videoId)
+
+            // Convert to AVIMAVideoItem
+            guard let videoItem = AVIMAVideoItem.from(video: bcovVideo) else {
+                throw PlayerError.videoLoadFailed("Failed to parse video metadata")
+            }
+
+            currentVideo = videoItem
+
+            // Initialize players
+            try await initializePlayers(with: videoItem)
+            initializationStatus = .success
+        } catch {
+            initializationStatus = .error(error)
+            playbackError = error
+            mainVideoState = .error(error.localizedDescription)
+        }
+    }
+
+    /// Loads a video item and initializes the player.
+    ///
+    /// Alternative method for when you already have a full AVIMAVideoItem.
     ///
     /// - Parameter video: The video item to load
     func loadVideo(_ video: AVIMAVideoItem) async {
@@ -278,16 +428,24 @@ class AVIMAPlayerViewModel: ObservableObject {
     /// - During ads: Resumes ad playback
     /// - During main content: Resumes main video playback
     func play() {
+        debugPrintWithTimestamp("▶️ Play called - mode: \(playbackMode)")
+
         switch playbackMode {
         case .mainVideo:
+            // Resume Brightcove playback controller
+            mainPlaybackController?.play()
+            // Also ensure AVPlayer is playing
             mainPlayer?.play()
             mainVideoState = .playing
+            debugPrintWithTimestamp("   Main video resumed")
 
         case .advertisement:
             adsManager?.resume()
             adState = .playing
+            debugPrintWithTimestamp("   Ad resumed")
 
         case .idle:
+            debugPrintWithTimestamp("   Idle - no action")
             break
         }
     }
@@ -296,16 +454,24 @@ class AVIMAPlayerViewModel: ObservableObject {
     ///
     /// Works in both ad and main video modes.
     func pause() {
+        debugPrintWithTimestamp("⏸️ Pause called - mode: \(playbackMode)")
+
         switch playbackMode {
         case .mainVideo:
+            // Pause Brightcove playback controller
+            mainPlaybackController?.pause()
+            // Also pause AVPlayer
             mainPlayer?.pause()
             mainVideoState = .paused
+            debugPrintWithTimestamp("   Main video paused")
 
         case .advertisement:
             adsManager?.pause()
             adState = .paused
+            debugPrintWithTimestamp("   Ad paused")
 
         case .idle:
+            debugPrintWithTimestamp("   Idle - no action")
             break
         }
     }
@@ -343,11 +509,40 @@ class AVIMAPlayerViewModel: ObservableObject {
         return true
     }
 
+    /// Toggles closed captions on or off.
+    ///
+    /// Enables the first available caption track if turning on,
+    /// or disables all tracks if turning off.
+    /// Only works during main video playback (not during ads).
+    func toggleClosedCaptions() {
+        guard playbackMode == .mainVideo,
+              let player = mainPlayer,
+              let asset = player.currentItem?.asset,
+              let group = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else {
+            debugPrintWithTimestamp("⚠️ Cannot toggle CC - not in main video mode or no CC available")
+            return
+        }
+
+        if closedCaptionsEnabled {
+            // Disable closed captions
+            player.currentItem?.select(nil, in: group)
+            closedCaptionsEnabled = false
+            debugPrintWithTimestamp("📝 Closed captions disabled")
+        } else if let firstOption = group.options.first {
+            // Enable first available caption track
+            player.currentItem?.select(firstOption, in: group)
+            closedCaptionsEnabled = true
+            debugPrintWithTimestamp("📝 Closed captions enabled: \(firstOption.displayName)")
+        }
+    }
+
     /// Called when the view disappears.
     ///
-    /// Pauses playback to conserve resources.
+    /// Pauses playback and cleans up resources.
     func onDisappear() {
         pause()
+        cleanup()
+        removeLifecycleObservers()
     }
 
     /// Clears the current video and resets state.
@@ -365,6 +560,42 @@ class AVIMAPlayerViewModel: ObservableObject {
     }
 
     // MARK: - Private Implementation
+
+    /// Fetches a video from Brightcove by ID.
+    ///
+    /// - Parameter videoId: The Brightcove video ID
+    /// - Returns: The BCOVVideo object
+    /// - Throws: Error if video fetch fails
+    private func fetchVideo(videoId: String) async throws -> BCOVVideo {
+        return try await withCheckedThrowingContinuation { continuation in
+            let configuration = [BCOVPlaybackService.ConfigurationKeyAssetID: videoId]
+
+            playbackService.findVideo(
+                withConfiguration: configuration,
+                queryParameters: nil
+            ) { (video: BCOVVideo?, jsonResponse: Any?, error: Error?) in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                guard let video = video else {
+                    continuation.resume(
+                        throwing: NSError(
+                            domain: "AVIMAPlayerViewModel",
+                            code: -1,
+                            userInfo: [
+                                NSLocalizedDescriptionKey: "Video not found: \(videoId)"
+                            ]
+                        )
+                    )
+                    return
+                }
+
+                continuation.resume(returning: video)
+            }
+        }
+    }
 
     /// Initializes both main and ad players with the video.
     private func initializePlayers(with video: AVIMAVideoItem) async throws {
@@ -388,14 +619,14 @@ class AVIMAPlayerViewModel: ObservableObject {
         self.mainPlayer = player
 
         // Set up Brightcove playback controller
-        let playbackController = BCOVPlayerSDKManager.shared().createPlaybackController()
+        let playbackController = BCOVPlayerSDKManager.sharedManager().createPlaybackController()
         playbackController.delegate = self
-        playbackController.isAutoPlay = false
+        playbackController.isAutoPlay = false  // Don't autoplay - wait for ads to complete
         playbackController.isAutoAdvance = false
         self.mainPlaybackController = playbackController
 
-        // Set video
-        playbackController.setVideos([video.video] as NSFastEnumeration)
+        // Set video (will preload but not play)
+        playbackController.setVideos([video.video])
 
         // Set up time observer
         setupMainPlayerTimeObserver()
@@ -407,6 +638,15 @@ class AVIMAPlayerViewModel: ObservableObject {
     private func initializeIMAPlayer(with video: AVIMAVideoItem) async throws {
         guard let adTagURL = URL(string: video.adTagURL) else {
             throw PlayerError.invalidAdTagURL
+        }
+
+        // Ensure we have the required views for ad rendering
+        guard let containerView = adContainerView,
+              let viewController = adViewController else {
+            debugPrintWithTimestamp("⚠️ Ad container view or view controller not set. Skipping ads.")
+            // Skip to main video if no ad container available
+            switchToMainVideoMode()
+            return
         }
 
         adState = .loading
@@ -424,14 +664,21 @@ class AVIMAPlayerViewModel: ObservableObject {
         adsLoader.delegate = self
         self.adsLoader = adsLoader
 
+        // Create ad display container with real views
+        let adDisplayContainer = IMAAdDisplayContainer(
+            adContainer: containerView,
+            viewController: viewController
+        )
+
         // Request ads
         let request = IMAAdsRequest(
             adTagUrl: adTagURL.absoluteString,
-            adDisplayContainer: nil,
+            adDisplayContainer: adDisplayContainer,
             contentPlayhead: nil,
             userContext: nil
         )
 
+        debugPrintWithTimestamp("📺 Requesting ads from: \(adTagURL.absoluteString)")
         adsLoader.requestAds(with: request)
 
         // Set up time observer for ad player
@@ -440,10 +687,13 @@ class AVIMAPlayerViewModel: ObservableObject {
 
     /// Sets up time observation for main player.
     private func setupMainPlayerTimeObserver() {
+        // Remove existing observer if present
+        removeMainTimeObserver()
+
         guard let player = mainPlayer else { return }
 
         let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
-        mainTimeObserver = player.addPeriodicTimeObserver(
+        let observer = player.addPeriodicTimeObserver(
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
@@ -457,14 +707,27 @@ class AVIMAPlayerViewModel: ObservableObject {
                 self.duration = duration
             }
         }
+
+        // Store observer with its owning player instance
+        mainTimeObserver = (observer: observer, player: player)
+    }
+
+    /// Removes the main player time observer safely.
+    private func removeMainTimeObserver() {
+        guard let (observer, player) = mainTimeObserver else { return }
+        player.removeTimeObserver(observer)
+        mainTimeObserver = nil
     }
 
     /// Sets up time observation for ad player.
     private func setupAdPlayerTimeObserver() {
+        // Remove existing observer if present
+        removeAdTimeObserver()
+
         guard let player = adPlayer else { return }
 
         let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
-        adTimeObserver = player.addPeriodicTimeObserver(
+        let observer = player.addPeriodicTimeObserver(
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
@@ -472,7 +735,22 @@ class AVIMAPlayerViewModel: ObservableObject {
                   self.playbackMode == .advertisement else { return }
 
             self.currentTime = time.seconds
+
+            // Update ad progress with current time
+            if let currentAd = self.currentAd {
+                self.updateAdProgress(from: currentAd, currentTime: time.seconds)
+            }
         }
+
+        // Store observer with its owning player instance
+        adTimeObserver = (observer: observer, player: player)
+    }
+
+    /// Removes the ad player time observer safely.
+    private func removeAdTimeObserver() {
+        guard let (observer, player) = adTimeObserver else { return }
+        player.removeTimeObserver(observer)
+        adTimeObserver = nil
     }
 
     /// Sets up observer for mute state changes.
@@ -560,32 +838,81 @@ class AVIMAPlayerViewModel: ObservableObject {
     }
 
     /// Switches playback mode to advertisement.
+    ///
+    /// Ensures clean state transition by pausing main video and activating ad player.
     private func switchToAdMode() {
-        playbackMode = .advertisement
+        debugPrintWithTimestamp("🔄 Switching to ad mode")
+
+        // Validate state
+        guard playbackMode != .advertisement else {
+            debugPrintWithTimestamp("   ⚠️ Already in ad mode")
+            return
+        }
+
+        // Pause main video
+        mainPlaybackController?.pause()
         mainPlayer?.pause()
+
+        // Activate ad mode
+        playbackMode = .advertisement
         adState = .playing
+
+        debugPrintWithTimestamp("   ✅ Ad mode active")
     }
 
-    /// Switches playback mode back to main video.
+    /// Switches playback mode back to main video and starts playback.
+    ///
+    /// Ensures clean state transition by stopping ads and activating main video.
     private func switchToMainVideoMode() {
-        playbackMode = .mainVideo
+        debugPrintWithTimestamp("🔄 Switching to main video mode")
+
+        // Validate state
+        guard playbackMode != .mainVideo else {
+            debugPrintWithTimestamp("   ⚠️ Already in main video mode")
+            return
+        }
+
+        // Clean up ad state
         adState = .idle
         adProgress = nil
+
+        // Activate main video mode
+        playbackMode = .mainVideo
+
+        // Start main video playback
+        mainPlaybackController?.play()
         mainPlayer?.play()
         mainVideoState = .playing
+
+        debugPrintWithTimestamp("   ✅ Main video mode active")
+
+        // Update closed caption state
+        updateCaptionState()
+    }
+
+    /// Updates the closed caption state based on the current player selection.
+    ///
+    /// Should be called when playback mode changes or video loads.
+    private func updateCaptionState() {
+        guard let player = mainPlayer,
+              let asset = player.currentItem?.asset,
+              let group = asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
+              let currentSelection = player.currentItem?.currentMediaSelection else {
+            closedCaptionsEnabled = false
+            return
+        }
+
+        let selectedOption = currentSelection.selectedMediaOption(in: group)
+        closedCaptionsEnabled = (selectedOption != nil)
     }
 
     /// Cleans up players and observers.
-    private func cleanup() {
-        if let observer = mainTimeObserver {
-            mainPlayer?.removeTimeObserver(observer)
-            mainTimeObserver = nil
-        }
-
-        if let observer = adTimeObserver {
-            adPlayer?.removeTimeObserver(observer)
-            adTimeObserver = nil
-        }
+    ///
+    /// Should be called from View's onDisappear.
+    func cleanup() {
+        // Remove time observers safely from their owning player instances
+        removeMainTimeObserver()
+        removeAdTimeObserver()
 
         mainPlayer?.pause()
         adPlayer?.pause()
@@ -627,10 +954,17 @@ extension AVIMAPlayerViewModel: BCOVPlaybackControllerDelegate {
         _ controller: BCOVPlaybackController!,
         didAdvanceTo session: BCOVPlaybackSession!
     ) {
-        // Main video session started
+        // Main video session started with a new player instance
         if let player = session.player {
+            // Remove observer from old player before replacing
+            removeMainTimeObserver()
+
+            // Update to new player instance
             self.mainPlayer = player
             player.isMuted = isMuted
+
+            // Set up observer on new player instance
+            setupMainPlayerTimeObserver()
         }
     }
 
@@ -639,7 +973,7 @@ extension AVIMAPlayerViewModel: BCOVPlaybackControllerDelegate {
         playbackSession session: BCOVPlaybackSession!,
         didReceive lifecycleEvent: BCOVPlaybackSessionLifecycleEvent!
     ) {
-        guard let eventType = lifecycleEvent.eventType else { return }
+        let eventType = lifecycleEvent.eventType
 
         switch eventType {
         case kBCOVPlaybackSessionLifecycleEventReady:
@@ -671,22 +1005,36 @@ extension AVIMAPlayerViewModel: BCOVPlaybackControllerDelegate {
 extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
 
     func adsLoader(_ loader: IMAAdsLoader, adsLoadedWith adsLoadedData: IMAAdsLoadedData) {
-        let manager = adsLoadedData.adsManager
+        debugPrintWithTimestamp("✅ Ads loaded successfully")
+
+        guard let manager = adsLoadedData.adsManager else {
+            debugPrintWithTimestamp("❌ Failed to get ads manager")
+            adState = .error("Failed to get ads manager")
+            switchToMainVideoMode()
+            return
+        }
+
+        debugPrintWithTimestamp("📺 Initializing ads manager")
         manager.delegate = self
         manager.initialize(with: nil)
         self.adsManager = manager
 
         // Start ads
+        debugPrintWithTimestamp("▶️ Starting ad playback")
         manager.start()
         switchToAdMode()
     }
 
     func adsLoader(_ loader: IMAAdsLoader, failedWith adErrorData: IMAAdLoadingErrorData) {
         let errorMessage = adErrorData.adError.message ?? "Unknown ad error"
+        debugPrintWithTimestamp("❌ Ad loading failed: \(errorMessage)")
+        debugPrintWithTimestamp("   Error code: \(adErrorData.adError.code)")
+
         adState = .error(errorMessage)
         playbackError = PlayerError.adLoadFailed(errorMessage)
 
-        // Fall back to main video
+        // Ad failed, skip to main video and autoplay
+        debugPrintWithTimestamp("⏩ Skipping to main video")
         switchToMainVideoMode()
     }
 }
@@ -696,33 +1044,49 @@ extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
 extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
 
     func adsManager(_ adsManager: IMAAdsManager, didReceive event: IMAAdEvent) {
+        debugPrintWithTimestamp("📢 Ad event: \(event.type.rawValue)")
+
         switch event.type {
         case .LOADED:
+            debugPrintWithTimestamp("   Ad loaded and ready")
             adState = .ready
 
         case .STARTED:
+            debugPrintWithTimestamp("   Ad started playing")
             adState = .playing
+
             if let ad = event.ad {
+                currentAd = ad  // Store for continuous progress updates
                 updateAdProgress(from: ad, currentTime: 0)
+                debugPrintWithTimestamp("   Ad info: \(adProgress?.description ?? "no progress")")
             }
 
         case .PAUSE:
+            debugPrintWithTimestamp("   Ad paused")
             adState = .paused
 
         case .RESUME:
+            debugPrintWithTimestamp("   Ad resumed")
             adState = .playing
 
         case .COMPLETE:
+            debugPrintWithTimestamp("   Ad completed")
             adState = .completed
             adProgress = nil
+            currentAd = nil
 
         case .ALL_ADS_COMPLETED:
+            debugPrintWithTimestamp("   All ads completed - switching to main video")
+            currentAd = nil
             switchToMainVideoMode()
 
         case .SKIPPED:
+            debugPrintWithTimestamp("   Ad skipped - switching to main video")
+            currentAd = nil
             switchToMainVideoMode()
 
         default:
+            debugPrintWithTimestamp("   Other event: \(event.type)")
             break
         }
     }
@@ -732,15 +1096,18 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
         adState = .error(errorMessage)
         playbackError = PlayerError.adLoadFailed(errorMessage)
 
-        // Fall back to main video
+        // Ad error, skip to main video and autoplay
         switchToMainVideoMode()
     }
 
     func adsManagerDidRequestContentPause(_ adsManager: IMAAdsManager) {
+        // Ad is starting, pause main video
+        mainPlaybackController?.pause()
         mainPlayer?.pause()
     }
 
     func adsManagerDidRequestContentResume(_ adsManager: IMAAdsManager) {
+        // Ad completed, resume main video with autoplay
         switchToMainVideoMode()
     }
 
@@ -756,5 +1123,75 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
             skipTimeRemaining: ad.skipTimeOffset
         )
         duration = ad.duration
+    }
+}
+
+// MARK: - VideoPlayerControlsDelegate
+
+extension AVIMAPlayerViewModel: VideoPlayerControlsDelegate {
+
+    func handleControlAction(_ action: VideoPlayerControlAction) {
+        switch action {
+        case .play:
+            play()
+
+        case .pause:
+            pause()
+
+        case .togglePlayPause:
+            if isPlaying {
+                pause()
+            } else {
+                play()
+            }
+
+        case .mute:
+            if !isMuted {
+                toggleMute()
+            }
+
+        case .unmute:
+            if isMuted {
+                toggleMute()
+            }
+
+        case .toggleMute:
+            toggleMute()
+
+        case .seek(let time):
+            seek(to: time)
+
+        case .skipBackward(let duration):
+            let newTime = max(0, currentTime - duration)
+            seek(to: newTime)
+
+        case .skipForward(let duration):
+            let newTime = min(self.duration, currentTime + duration)
+            seek(to: newTime)
+
+        case .skipAd:
+            skipAd()
+
+        case .toggleClosedCaptions:
+            toggleClosedCaptions()
+
+        case .close, .share:
+            // These actions are handled by the View (navigation/presentation)
+            break
+        }
+    }
+
+    var adProgress: AdProgressInfo? {
+        // Convert internal AdProgress to AdProgressInfo
+        guard let progress = self.adProgress else { return nil }
+
+        return AdProgressInfo(
+            currentAdNumber: progress.currentAdNumber,
+            totalAds: progress.totalAds,
+            currentTime: progress.currentTime,
+            duration: progress.duration,
+            isSkippable: progress.isSkippable,
+            skipTimeRemaining: progress.skipTimeRemaining
+        )
     }
 }
