@@ -111,7 +111,13 @@ struct AVIMAPlayerView: View {
             // so IMA's native UI doesn't cover them
             if viewModel.playbackMode == .advertisement {
                 adControlsOverlay
+                    .opacity(viewModel.showingControls ? 1 : 0)
+                    .allowsHitTesting(viewModel.showingControls)
+                    .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
             }
+        }
+        .onTapGesture {
+            viewModel.toggleControls()
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -310,12 +316,11 @@ struct AVIMAPlayerView: View {
     @ViewBuilder
     private var adControlsOverlay: some View {
         ControlsOverlay(aspectRatio: viewModel.videoAspectRatio) {
-            VideoPlayerControlsView(
-                configuration: .adPlayback,
-                delegate: viewModel
-            )
+            AVIMAAdControlsView(viewModel: viewModel, showMute: false)
         }
-        .allowsHitTesting(true)
+        .opacity(viewModel.showingControls ? 1 : 0)
+        .allowsHitTesting(viewModel.showingControls)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
     }
 
     /// Main video player view with native controls
@@ -337,6 +342,9 @@ struct AVIMAPlayerView: View {
                     delegate: viewModel
                 )
             }
+            .opacity(viewModel.showingControls ? 1 : 0)
+            .allowsHitTesting(viewModel.showingControls)
+            .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
         }
     }
 

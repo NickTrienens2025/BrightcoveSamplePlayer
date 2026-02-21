@@ -102,21 +102,23 @@ struct AVIMAPlayerControlsView: View {
 
     @ViewBuilder
     private var controlsSection: some View {
-        HStack(spacing: 24) {
-            // Skip button (only for skippable ads)
-            if viewModel.canSkip && viewModel.playbackMode == .advertisement {
-                skipButton
+        HStack(spacing: 0) {
+            if viewModel.playbackMode == .advertisement {
+                // Ad Layout: Dedicated ad controls
+                AVIMAAdControlsView(viewModel: viewModel, showMute: false)
+            } else {
+                // Main Video Layout: Play button perfectly centered
+                ZStack {
+                    // Center: Play Button
+                    playPauseButton
+                    
+                    // Right: Mute Button & Spacer to push it
+                    HStack {
+                        Spacer()
+                        muteButton
+                    }
+                }
             }
-
-            Spacer()
-
-            // Play/Pause button
-            playPauseButton
-
-            Spacer()
-
-            // Mute button
-            muteButton
         }
         .font(.title2)
     }
@@ -152,34 +154,13 @@ struct AVIMAPlayerControlsView: View {
         }
     }
 
-    // MARK: - Skip Button
 
-    @ViewBuilder
-    private var skipButton: some View {
-        Button {
-            viewModel.skipAd()
-        } label: {
-            HStack(spacing: 4) {
-                Text("Skip")
-                    .font(.caption.weight(.semibold))
-                Image(systemName: "forward.fill")
-                    .font(.caption2)
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(.white.opacity(0.2))
-            )
-        }
-    }
 
     // MARK: - Ad Info Banner
 
     @ViewBuilder
     private var adInfoBanner: some View {
-        if let adProgress = viewModel.adProgress {
+        if let adProgress = viewModel.currentAdProgress {
             HStack(spacing: 12) {
                 // Ad indicator
                 HStack(spacing: 4) {

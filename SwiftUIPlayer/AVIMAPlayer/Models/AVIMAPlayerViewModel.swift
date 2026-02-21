@@ -11,6 +11,7 @@ import Combine
 import Foundation
 import GoogleInteractiveMediaAds
 import UIKit
+import SwiftUI
 import BrightcovePlayerSDK
 
 /// ViewModel managing IMA video playback with comprehensive state tracking.
@@ -175,7 +176,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     @Published private(set) var duration: TimeInterval = 0
 
     /// Current ad progress information (nil when not playing ad)
-    @Published private(set) var adProgress: AdProgress?
+    @Published private(set) var currentAdProgress: AdProgress?
 
     /// Whether audio is muted
     @Published var isMuted: Bool = false
@@ -188,6 +189,12 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     /// Whether closed captions are currently enabled
     @Published private(set) var closedCaptionsEnabled: Bool = false
+
+    /// Whether player controls are currently visible
+    @Published var showingControls: Bool = true
+
+    /// Timer for auto-hiding controls
+    private var controlsTimer: Timer?
 
     // MARK: - Computed Properties (Derived State)
 
@@ -209,7 +216,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         case .mainVideo:
             return true
         case .advertisement:
-            return adProgress?.isSkippable ?? false
+            return currentAdProgress?.isSkippable ?? false
         case .idle:
             return false
         }
@@ -429,6 +436,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// - During main content: Resumes main video playback
     func play() {
         debugPrintWithTimestamp("▶️ Play called - mode: \(playbackMode)")
+        showControls()
 
         switch playbackMode {
         case .mainVideo:
@@ -455,6 +463,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// Works in both ad and main video modes.
     func pause() {
         debugPrintWithTimestamp("⏸️ Pause called - mode: \(playbackMode)")
+        showControls()
 
         switch playbackMode {
         case .mainVideo:
@@ -480,6 +489,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     ///
     /// Applies to both main video and ad audio.
     func toggleMute() {
+        showControls()
         isMuted.toggle()
         mainPlayer?.isMuted = isMuted
         adsManager?.volume = isMuted ? 0 : 1
@@ -490,6 +500,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// - Parameter time: Target time in seconds
     /// - Note: Only works during main video playback, not during ads
     func seek(to time: TimeInterval) {
+        showControls()
         guard canSeek else { return }
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         mainPlayer?.seek(to: cmTime)
@@ -501,6 +512,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// - Returns: `true` if skip was successful, `false` otherwise
     @discardableResult
     func skipAd() -> Bool {
+        showControls()
         guard canSkip, playbackMode == .advertisement else {
             return false
         }
@@ -515,6 +527,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// or disables all tracks if turning off.
     /// Only works during main video playback (not during ads).
     func toggleClosedCaptions() {
+        showControls()
         guard playbackMode == .mainVideo,
               let player = mainPlayer,
               let asset = player.currentItem?.asset,
@@ -536,6 +549,43 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         }
     }
 
+    /// Shows player controls and starts auto-hide timer.
+    func showControls() {
+        showingControls = true
+        resetControlsTimer()
+    }
+
+    /// Hides player controls and invalidates timer.
+    func hideControls() {
+        withAnimation {
+            showingControls = false
+        }
+        controlsTimer?.invalidate()
+        controlsTimer = nil
+    }
+
+    /// Toggles player controls visibility.
+    func toggleControls() {
+        if showingControls {
+            hideControls()
+        } else {
+            showControls()
+        }
+    }
+
+    /// Resets the auto-hide timer.
+    /// Call this whenever user interacts with controls.
+    private func resetControlsTimer() {
+        controlsTimer?.invalidate()
+        
+        // Only auto-hide if playing
+        guard isPlaying else { return }
+        
+        controlsTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
+            self?.hideControls()
+        }
+    }
+
     /// Called when the view disappears.
     ///
     /// Pauses playback and cleans up resources.
@@ -554,7 +604,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         adState = .idle
         currentTime = 0
         duration = 0
-        adProgress = nil
+        currentAdProgress = nil
         playbackError = nil
         initializationStatus = .notStarted
     }
@@ -874,7 +924,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
         // Clean up ad state
         adState = .idle
-        adProgress = nil
+        currentAdProgress = nil
 
         // Activate main video mode
         playbackMode = .mainVideo
@@ -1058,7 +1108,7 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
             if let ad = event.ad {
                 currentAd = ad  // Store for continuous progress updates
                 updateAdProgress(from: ad, currentTime: 0)
-                debugPrintWithTimestamp("   Ad info: \(adProgress?.description ?? "no progress")")
+                debugPrintWithTimestamp("   Ad info: \(currentAdProgress?.description ?? "no progress")")
             }
 
         case .PAUSE:
@@ -1072,7 +1122,7 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
         case .COMPLETE:
             debugPrintWithTimestamp("   Ad completed")
             adState = .completed
-            adProgress = nil
+            currentAdProgress = nil
             currentAd = nil
 
         case .ALL_ADS_COMPLETED:
@@ -1114,7 +1164,7 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
     /// Updates ad progress information.
     private func updateAdProgress(from ad: IMAAd, currentTime: TimeInterval) {
         let podInfo = ad.adPodInfo
-        adProgress = AdProgress(
+        currentAdProgress = AdProgress(
             currentAdNumber: podInfo.adPosition,
             totalAds: podInfo.totalAds,
             currentTime: currentTime,
@@ -1183,7 +1233,7 @@ extension AVIMAPlayerViewModel: VideoPlayerControlsDelegate {
 
     var adProgress: AdProgressInfo? {
         // Convert internal AdProgress to AdProgressInfo
-        guard let progress = self.adProgress else { return nil }
+        guard let progress = self.currentAdProgress else { return nil }
 
         return AdProgressInfo(
             currentAdNumber: progress.currentAdNumber,
