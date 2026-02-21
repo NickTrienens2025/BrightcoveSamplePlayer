@@ -345,6 +345,18 @@ struct AVIMAPlayerView: View {
             .opacity(viewModel.showingControls ? 1 : 0)
             .allowsHitTesting(viewModel.showingControls)
             .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
+
+            // Tap-to-show-controls overlay.
+            // The outer ZStack's onTapGesture never fires because AVPlayerViewController's
+            // internal gesture recognizers intercept touches before they reach SwiftUI.
+            // This transparent overlay sits above AVPlayerViewController in z-order so UIKit
+            // hit-testing finds it first. Only active when controls are hidden.
+            Color.clear
+                .contentShape(Rectangle())
+                .allowsHitTesting(!viewModel.showingControls)
+                .onTapGesture {
+                    viewModel.toggleControls()
+                }
         }
     }
 
@@ -456,11 +468,19 @@ private class AdContainerViewController<Content: View>: UIViewController {
         // Disable autoresizing mask so we can use constraints
         imaContainerView.translatesAutoresizingMaskIntoConstraints = false
 
-        // Constrain IMA container to center
+        // Constrain IMA container to center with aspect-fit sizing.
+        // The "fill width" constraint has lower priority so AutoLayout can break it
+        // in landscape, where a full-width container would be taller than the view
+        // and clip IMA's UI elements (e.g. "Learn More") off the top/bottom.
+        let fillWidth = imaContainerView.widthAnchor.constraint(equalTo: view.widthAnchor)
+        fillWidth.priority = .defaultHigh
+
         NSLayoutConstraint.activate([
             imaContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             imaContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            imaContainerView.widthAnchor.constraint(equalTo: view.widthAnchor)
+            imaContainerView.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor),
+            imaContainerView.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor),
+            fillWidth
         ])
 
         // Set initial aspect ratio (will be updated when video loads)
@@ -521,6 +541,26 @@ private class AdContainerViewController<Content: View>: UIViewController {
 
         // Update hosting controller frame
         hostingController.view.frame = view.bounds
+
+        // After AutoLayout repositions imaContainerView, trigger a layout pass on its
+        // subviews so IMA's internal views re-size to the updated container bounds.
+        imaContainerView.setNeedsLayout()
+        imaContainerView.layoutIfNeeded()
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+
+        // Force AutoLayout to resolve the new bounds during the rotation animation,
+        // then re-layout IMA's internal subviews once the transition completes.
+        coordinator.animate(alongsideTransition: { [weak self] _ in
+            self?.view.setNeedsLayout()
+            self?.view.layoutIfNeeded()
+        }, completion: { [weak self] _ in
+            guard let self else { return }
+            self.imaContainerView.setNeedsLayout()
+            self.imaContainerView.layoutIfNeeded()
+        })
     }
 
     func updateContent(_ content: Content) {

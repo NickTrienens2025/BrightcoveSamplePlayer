@@ -556,7 +556,9 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     }
 
     /// Hides player controls and invalidates timer.
+    /// No-op during ad playback — controls must remain visible throughout an ad.
     func hideControls() {
+        guard playbackMode != .advertisement else { return }
         withAnimation {
             showingControls = false
         }
@@ -577,10 +579,13 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// Call this whenever user interacts with controls.
     private func resetControlsTimer() {
         controlsTimer?.invalidate()
-        
+
+        // Never auto-hide during ads — controls must stay visible for the full ad.
+        guard playbackMode != .advertisement else { return }
+
         // Only auto-hide if playing
         guard isPlaying else { return }
-        
+
         controlsTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
             self?.hideControls()
         }
@@ -940,20 +945,27 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         updateCaptionState()
     }
 
-    /// Updates the closed caption state based on the current player selection.
+    /// Applies the current closed caption state to AVFoundation.
     ///
+    /// Uses `closedCaptionsEnabled` as the source of truth rather than reading
+    /// the player's current selection. This prevents system accessibility settings
+    /// from auto-enabling CC against the app default (off).
     /// Should be called when playback mode changes or video loads.
     private func updateCaptionState() {
         guard let player = mainPlayer,
               let asset = player.currentItem?.asset,
               let group = asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
-              let currentSelection = player.currentItem?.currentMediaSelection else {
+              let currentItem = player.currentItem else {
             closedCaptionsEnabled = false
             return
         }
 
-        let selectedOption = currentSelection.selectedMediaOption(in: group)
-        closedCaptionsEnabled = (selectedOption != nil)
+        if closedCaptionsEnabled, let firstOption = group.options.first {
+            currentItem.select(firstOption, in: group)
+        } else {
+            currentItem.select(nil, in: group)
+            closedCaptionsEnabled = false
+        }
     }
 
     /// Cleans up players and observers.
