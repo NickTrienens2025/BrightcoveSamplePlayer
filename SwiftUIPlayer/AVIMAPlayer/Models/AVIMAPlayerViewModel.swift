@@ -264,6 +264,25 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         return group.options
     }
 
+    // MARK: - Shared IMA Container
+
+    /// Shared UIView that IMA renders its ad content into.
+    ///
+    /// Owned by the ViewModel so it can be **reparented** between the embedded and
+    /// fullscreen `AdContainerViewController` instances when the user expands to
+    /// fullscreen while an ad is playing. Each VC's `viewWillAppear` moves this view
+    /// into its own UIKit hierarchy with `insertSubview`, which automatically removes
+    /// it from the previous parent.
+    ///
+    /// Manual frame layout (not NSLayoutConstraint) is used so there are no stale
+    /// constraints when the view moves between parents.
+    let imaContainerView: UIView = {
+        let v = UIView()
+        v.backgroundColor = .clear
+        v.isHidden = true
+        return v
+    }()
+
     // MARK: - Private Properties
 
     /// Brightcove playback controller for main video
@@ -379,8 +398,10 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     ///
     /// - Parameter videoId: The Brightcove video ID
     func loadVideo(videoId: String) async {
-        // Prevent duplicate loads
-        guard initializationStatus != .loading else { return }
+        // Prevent duplicate/redundant loads — skip if already loading or successfully initialized.
+        // The .success guard is critical for the shared-ViewModel embedded+fullscreen pattern:
+        // the fullscreen view's .task calls this but must not re-initialize the running player.
+        guard initializationStatus != .loading, initializationStatus != .success else { return }
 
         initializationStatus = .loading
         playbackError = nil
@@ -412,8 +433,8 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     ///
     /// - Parameter video: The video item to load
     func loadVideo(_ video: AVIMAVideoItem) async {
-        // Prevent duplicate loads
-        guard initializationStatus != .loading else { return }
+        // Prevent duplicate/redundant loads — see loadVideo(videoId:) comment.
+        guard initializationStatus != .loading, initializationStatus != .success else { return }
 
         initializationStatus = .loading
         playbackError = nil

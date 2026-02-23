@@ -72,6 +72,7 @@ struct ControlButton: View {
                 )
                 .shadow(color: showBackdrop ? .black.opacity(0.5) : .clear, radius: 8)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
     }
 }

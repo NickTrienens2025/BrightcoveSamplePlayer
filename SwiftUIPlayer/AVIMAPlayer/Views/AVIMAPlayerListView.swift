@@ -109,12 +109,26 @@ struct AVIMAPlayerListView: View {
 
     @ViewBuilder
     private func videoList(videos: [AVIMAVideoItem]) -> some View {
-        List(videos) { video in
-            NavigationLink {
-                // Pass just the video ID - the player will fetch the full video
-                AVIMAPlayerView(videoId: video.id)
-            } label: {
-                VideoRowView(video: video)
+        List {
+            // Featured inline player for the first video.
+            // Edge-to-edge black row so the player fills the section card.
+            if let firstVideo = videos.first {
+                Section {
+                    AVIMAEmbeddedPlayerView(video: firstVideo)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.black)
+                }
+            }
+
+            // Full video list — each row navigates to the dedicated player screen.
+            Section("All Videos") {
+                ForEach(videos) { video in
+                    NavigationLink {
+                        AVIMAPlayerView(videoId: video.id)
+                    } label: {
+                        VideoRowView(video: video)
+                    }
+                }
             }
         }
         .listStyle(.insetGrouped)

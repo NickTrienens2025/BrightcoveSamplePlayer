@@ -35,14 +35,20 @@ struct VideoPlayerControlsView: View {
     /// State provider for reactive updates
     @ObservedObject var stateProvider: VideoPlayerControlsStateProvider
 
+    /// Optional expand/fullscreen action. When non-nil, an expand button is shown
+    /// at the leading position of the top bar so it never overlaps trailing CC/Mute buttons.
+    private let onExpandAction: (() -> Void)?
+
     // MARK: - Initialization
 
     init(
         configuration: VideoPlayerControlsConfiguration,
-        delegate: VideoPlayerControlsDelegate
+        delegate: VideoPlayerControlsDelegate,
+        onExpandAction: (() -> Void)? = nil
     ) {
         self.configuration = configuration
         self.stateProvider = VideoPlayerControlsStateProvider(delegate: delegate)
+        self.onExpandAction = onExpandAction
     }
 
     // MARK: - Body
@@ -81,6 +87,11 @@ struct VideoPlayerControlsView: View {
     @ViewBuilder
     private var topControlsBar: some View {
         HStack(spacing: 16) {
+            // Expand button — always at leading so it never overlaps trailing CC/Mute buttons.
+            if let onExpandAction {
+                expandButton(action: onExpandAction)
+            }
+
             // Leading buttons
             if let closePosition = configuration.buttons.closeButton,
                closePosition == .leading {
@@ -194,6 +205,18 @@ struct VideoPlayerControlsView: View {
     }
 
     // MARK: - Individual Controls
+
+    private func expandButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(8)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Expand to fullscreen")
+    }
 
     private var closeButton: some View {
         ControlButton(

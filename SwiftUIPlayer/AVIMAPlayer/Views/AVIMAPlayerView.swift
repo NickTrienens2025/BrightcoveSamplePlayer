@@ -38,6 +38,27 @@ struct AVIMAPlayerView: View {
     /// Whether fullscreen is allowed
     private let allowsFullscreen: Bool
 
+    /// Whether to show the navigation bar title and toolbar chrome.
+    /// Set to false when embedding the player inline (e.g. AVIMAEmbeddedPlayerView).
+    private let showNavigationChrome: Bool
+
+    /// Whether to clean up the ViewModel when this view disappears.
+    /// Set to false when sharing a ViewModel with a fullscreen cover so the
+    /// embedded player's ViewModel isn't destroyed on fullscreen dismissal.
+    private let cleanupOnDisappear: Bool
+
+    /// Callback invoked when the expand/fullscreen button is tapped.
+    /// When non-nil, an expand button is rendered as the last element of the player
+    /// ZStack so it wins UIKit hit-testing over IMA's content (including during ads).
+    private let onExpand: (() -> Void)?
+
+    /// When true, suppresses AVPlayerViewController rendering to avoid the
+    /// two-AVPlayerViewController-one-AVPlayer display conflict that occurs when
+    /// a fullscreen cover shares the same AVPlayer as this embedded player.
+    /// The embedded player renders Color.black as a placeholder while the
+    /// fullscreen cover is visible.
+    private let suppressPlayerView: Bool
+
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Nested Types
@@ -69,9 +90,13 @@ struct AVIMAPlayerView: View {
     /// - Parameter videoId: The Brightcove video ID
     /// - Parameter allowsFullscreen: Whether fullscreen mode is allowed (default: false)
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(videoId: String, allowsFullscreen: Bool = false, viewModel: AVIMAPlayerViewModel? = nil) {
+    init(videoId: String, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
         self.videoSource = .id(videoId)
         self.allowsFullscreen = allowsFullscreen
+        self.showNavigationChrome = showNavigationChrome
+        self.cleanupOnDisappear = cleanupOnDisappear
+        self.suppressPlayerView = suppressPlayerView
+        self.onExpand = onExpand
         _viewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerViewModel())
     }
 
@@ -85,20 +110,58 @@ struct AVIMAPlayerView: View {
     /// - Parameter video: The video to play
     /// - Parameter allowsFullscreen: Whether fullscreen mode is allowed (default: false)
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(video: AVIMAVideoItem, allowsFullscreen: Bool = false, viewModel: AVIMAPlayerViewModel? = nil) {
+    init(video: AVIMAVideoItem, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
         self.videoSource = .item(video)
         self.allowsFullscreen = allowsFullscreen
+        self.showNavigationChrome = showNavigationChrome
+        self.cleanupOnDisappear = cleanupOnDisappear
+        self.suppressPlayerView = suppressPlayerView
+        self.onExpand = onExpand
         _viewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerViewModel())
     }
 
     // MARK: - Body
 
     var body: some View {
+        if showNavigationChrome {
+            playerCore
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        VStack(spacing: 2) {
+                            Text(displayTitle)
+                                .font(.headline)
+                                .foregroundStyle(.white)
+
+                            if viewModel.playbackMode == .advertisement {
+                                Text("Advertisement")
+                                    .font(.caption2)
+                                    .foregroundStyle(.yellow)
+                            }
+                        }
+                    }
+                }
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(Color.black.opacity(0.5), for: .navigationBar)
+        } else {
+            playerCore
+        }
+    }
+
+    // Core player ZStack, shared between embedded and fullscreen presentations.
+    //
+    // IMPORTANT: UIViewControllerRepresentable (AdContainerView) embeds its child
+    // VC's view at the UIKit level, where it can end up on top of sibling SwiftUI
+    // views regardless of ZStack order. All interactive controls (expand button,
+    // ad controls, tap captures) must therefore live INSIDE AdContainerView's
+    // content (HC2) to be reliably tappable.
+    private var playerCore: some View {
         ZStack {
             Color.black
                 .ignoresSafeArea()
 
-            // Ad container view - always present for IMA SDK (positioned in back)
+            // All interactive controls are inside this content closure (HC2),
+            // where UIKit hit-testing is reliable.
             AdContainerView(
                 viewModel: viewModel,
                 showAdContainer: viewModel.playbackMode == .advertisement,
@@ -106,42 +169,12 @@ struct AVIMAPlayerView: View {
             ) {
                 content
             }
-
-            // Custom ad controls rendered OUTSIDE the ad container
-            // so IMA's native UI doesn't cover them
-            if viewModel.playbackMode == .advertisement {
-                adControlsOverlay
-                    .opacity(viewModel.showingControls ? 1 : 0)
-                    .allowsHitTesting(viewModel.showingControls)
-                    .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
-            }
         }
-        .onTapGesture {
-            viewModel.toggleControls()
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 2) {
-                    Text(displayTitle)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-
-                    if viewModel.playbackMode == .advertisement {
-                        Text("Advertisement")
-                            .font(.caption2)
-                            .foregroundStyle(.yellow)
-                    }
-                }
-            }
-        }
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(Color.black.opacity(0.8), for: .navigationBar)
         .task {
             await loadVideoFromSource()
         }
         .onDisappear {
-            viewModel.onDisappear()
+            if cleanupOnDisappear { viewModel.onDisappear() }
         }
     }
 
@@ -248,8 +281,13 @@ struct AVIMAPlayerView: View {
     private func playerContent(in size: CGSize) -> some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black
-                    .ignoresSafeArea()
+                // During ad playback the background must be transparent so IMA's
+                // imaContainerView (behind hostingController.view in UIKit) can show
+                // through. For all other modes a black background is correct.
+                if viewModel.playbackMode != .advertisement {
+                    Color.black
+                        .ignoresSafeArea()
+                }
 
                 // Mutually exclusive player states using switch
                 playerStateView
@@ -301,18 +339,74 @@ struct AVIMAPlayerView: View {
         }
     }
 
-    /// Ad playback view - IMA renders in container
+    /// Ad playback view — IMA renders in imaContainerView (behind hostingController.view).
+    ///
+    /// The transparent base passes touches through to IMA: UIHostingController's
+    /// hitTest returns nil for allowsHitTesting(false) areas, so UIKit falls back
+    /// to imaContainerView. Controls sit on top with allowsHitTesting(true).
+    ///
+    /// **Expand button placement:**
+    /// The Button is placed directly in the ZStack (no VStack+Spacer wrapper).
+    /// A plain Button's UIKit frame is exactly its visual size (~49×49 pt), so
+    /// UIKit's hitTest returns nil for touches outside it and falls through to
+    /// adControlsOverlay. A VStack+Spacer wrapper would make the entire VStack
+    /// frame the UIKit hit target, routing all touches to the Button.
     @ViewBuilder
     private var adPlaybackView: some View {
-        // IMA is already rendering into the AdContainerView (UIKit layer below)
-        // This layer should not block touches to the ad
-        // Controls are rendered at top-level ZStack
-        Color.clear
-            .allowsHitTesting(false)  // Don't block touches to IMA ad below
+        ZStack(alignment: .topLeading) {
+            // Touch-absorbing base layer.
+            //
+            // SwiftUI ZStack hit-testing quirk: when no child in the ZStack claims
+            // a touch, SwiftUI can route it to the ONLY interactive child (the expand
+            // Button) regardless of whether the touch is within the Button's visual
+            // frame. This Color.clear with .contentShape + .onTapGesture ensures the
+            // base layer claims all uncaught taps, preventing them from reaching the
+            // expand button. The tap toggles controls as a useful fallback action.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.toggleControls()
+                }
+                #if DEBUG
+                .debugBorder(.gray, label: "Color.clear (tap absorber)")
+                #endif
+
+            // Expand button BEFORE ad controls so controls get higher hit-test
+            // priority (SwiftUI checks last ZStack child first). The expand button
+            // is at top-leading, ad controls are at bottom — no visual overlap.
+            if let onExpand {
+                Button(action: {
+                    debugPrintWithTimestamp("🔴 EXPAND BUTTON ACTION fired from adPlaybackView")
+                    onExpand()
+                }) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .padding(10)
+                .accessibilityLabel("Expand to fullscreen")
+                #if DEBUG
+                .debugBorder(.red, label: "EXPAND btn")
+                #endif
+            }
+
+            // Ad controls — last in ZStack so they win hit-testing over expand button.
+            // showingControls is always true during ad playback
+            // (hideControls() guards against the .advertisement mode).
+            adControlsOverlay
+                #if DEBUG
+                .debugBorder(.green, label: "adControlsOverlay")
+                #endif
+        }
+        #if DEBUG
+        .debugBorder(.yellow, label: "adPlaybackView ZStack")
+        #endif
     }
 
-    /// Custom controls for ad playback - rendered OUTSIDE ad container
-    /// Constrained to match the video aspect ratio
+    /// Custom controls for ad playback, constrained to the video aspect ratio.
     @ViewBuilder
     private var adControlsOverlay: some View {
         ControlsOverlay(aspectRatio: viewModel.videoAspectRatio) {
@@ -327,19 +421,29 @@ struct AVIMAPlayerView: View {
     @ViewBuilder
     private func mainVideoPlayerView(player: AVPlayer) -> some View {
         ZStack {
-            // Player without native controls
-            PlayerViewRepresentable(
-                player: player,
-                viewModel: viewModel,
-                isAdPlayer: false,
-                allowsFullscreen: allowsFullscreen
-            )
+            // Suppress PlayerViewRepresentable while a fullscreen cover is active:
+            // two AVPlayerViewController instances sharing one AVPlayer causes the
+            // most-recently-created VC to take over display, leaving the other blank.
+            // When suppressPlayerView=true the embedded player shows black and lets
+            // the fullscreen cover's AVPlayerViewController hold the player display.
+            if !suppressPlayerView {
+                PlayerViewRepresentable(
+                    player: player,
+                    viewModel: viewModel,
+                    isAdPlayer: false,
+                    allowsFullscreen: allowsFullscreen
+                )
+            } else {
+                Color.black.ignoresSafeArea()
+            }
 
-            // Custom controls overlay
+            // Custom controls overlay — expand button lives inside VideoPlayerControlsView
+            // at the leading top position so it never overlaps trailing CC/Mute buttons.
             ControlsOverlay(aspectRatio: viewModel.videoAspectRatio) {
                 VideoPlayerControlsView(
                     configuration: .fullMainVideo,
-                    delegate: viewModel
+                    delegate: viewModel,
+                    onExpandAction: onExpand
                 )
             }
             .opacity(viewModel.showingControls ? 1 : 0)
@@ -347,10 +451,10 @@ struct AVIMAPlayerView: View {
             .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
 
             // Tap-to-show-controls overlay.
-            // The outer ZStack's onTapGesture never fires because AVPlayerViewController's
-            // internal gesture recognizers intercept touches before they reach SwiftUI.
-            // This transparent overlay sits above AVPlayerViewController in z-order so UIKit
-            // hit-testing finds it first. Only active when controls are hidden.
+            // UIHostingController is aware of SwiftUI's allowsHitTesting and returns nil
+            // from hitTest for allowsHitTesting(false) views, so AVPlayerViewController
+            // below this layer receives those touches. When controls are hidden this
+            // overlay is active and shows them on tap.
             Color.clear
                 .contentShape(Rectangle())
                 .allowsHitTesting(!viewModel.showingControls)
@@ -422,7 +526,6 @@ private struct AdContainerView<Content: View>: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AdContainerViewController<Content> {
         let controller = AdContainerViewController(
             viewModel: viewModel,
-            aspectRatio: aspectRatio,
             content: content()
         )
         return controller
@@ -436,18 +539,26 @@ private struct AdContainerView<Content: View>: UIViewControllerRepresentable {
 }
 
 /// View controller that hosts SwiftUI content and provides IMA ad container.
+///
+/// **Shared imaContainerView:**
+/// The IMA rendering surface (`viewModel.imaContainerView`) is owned by the ViewModel
+/// so it survives fullscreen ↔ embedded transitions. `viewWillAppear` reparents it into
+/// this VC's view via `insertSubview` (UIKit removes it from the previous parent automatically),
+/// ensuring IMA always renders in whichever player is currently on screen — even when
+/// the user opens fullscreen while an ad is playing.
 private class AdContainerViewController<Content: View>: UIViewController {
 
     let viewModel: AVIMAPlayerViewModel
     var hostingController: UIHostingController<Content>
 
-    /// Container view specifically for IMA ad rendering (sized to video aspect ratio)
-    private let imaContainerView = UIView()
+    /// Current aspect ratio, stored for manual frame layout in viewDidLayoutSubviews.
+    private var currentAspectRatio: Double = 16.0 / 9.0
 
-    /// Aspect ratio constraint for IMA container
-    private var aspectRatioConstraint: NSLayoutConstraint?
+    #if DEBUG
+    private var hasLoggedSubviewHierarchy = false
+    #endif
 
-    init(viewModel: AVIMAPlayerViewModel, aspectRatio: Double, content: Content) {
+    init(viewModel: AVIMAPlayerViewModel, content: Content) {
         self.viewModel = viewModel
         self.hostingController = UIHostingController(rootView: content)
         super.init(nibName: nil, bundle: nil)
@@ -457,115 +568,177 @@ private class AdContainerViewController<Content: View>: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    // MARK: - Lifecycle
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+
+        let container = viewModel.imaContainerView
+
+        // Reparent the shared IMA container into this VC's view if needed.
+        // This fires on initial appearance AND when the embedded VC reappears after
+        // a fullscreen cover is dismissed, smoothly claiming the IMA rendering surface
+        // back from the (now-gone) fullscreen VC.
+        if container.superview !== view {
+            container.removeFromSuperview()
+            view.insertSubview(container, at: 0)   // Behind hostingController.view
+            view.setNeedsLayout()
+        }
+
+        viewModel.setAdContainer(containerView: container, viewController: self)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // Add IMA container view first (behind everything)
-        imaContainerView.backgroundColor = .clear
-        imaContainerView.isHidden = true  // Hidden by default, shown during ads
-        view.addSubview(imaContainerView)
-
-        // Disable autoresizing mask so we can use constraints
-        imaContainerView.translatesAutoresizingMaskIntoConstraints = false
-
-        // Constrain IMA container to center with aspect-fit sizing.
-        // The "fill width" constraint has lower priority so AutoLayout can break it
-        // in landscape, where a full-width container would be taller than the view
-        // and clip IMA's UI elements (e.g. "Learn More") off the top/bottom.
-        let fillWidth = imaContainerView.widthAnchor.constraint(equalTo: view.widthAnchor)
-        fillWidth.priority = .defaultHigh
-
-        NSLayoutConstraint.activate([
-            imaContainerView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            imaContainerView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            imaContainerView.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor),
-            imaContainerView.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor),
-            fillWidth
-        ])
-
-        // Set initial aspect ratio (will be updated when video loads)
-        updateAspectRatio(16.0/9.0)
-
-        // Add hosting controller as child on top (full screen)
+        // Add the SwiftUI hosting view on top. The shared imaContainerView (from the
+        // ViewModel) is added in viewWillAppear so it can move between embedded and
+        // fullscreen VCs without constraint conflicts.
         addChild(hostingController)
         view.addSubview(hostingController.view)
         hostingController.view.frame = view.bounds
         hostingController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         hostingController.view.backgroundColor = .clear  // Transparent so IMA shows through
-        hostingController.view.isOpaque = false  // Ensure transparency works properly
+        hostingController.view.isOpaque = false
         hostingController.didMove(toParent: self)
+    }
 
-        // Set IMA container (not the full view)
-        viewModel.setAdContainer(containerView: imaContainerView, viewController: self)
+    // MARK: - IMA Container Layout
+
+    /// Aspect-fit layout for the shared IMA container, matching the original
+    /// AutoLayout behavior (fill width when possible, constrained by view height).
+    private func layoutIMAContainerIfNeeded() {
+        let container = viewModel.imaContainerView
+        guard container.superview === view,
+              view.bounds.width > 0, view.bounds.height > 0 else { return }
+
+        let ratio = currentAspectRatio
+        let vw = view.bounds.width
+        let vh = view.bounds.height
+
+        // Aspect-fit: fill width unless that would exceed the height.
+        let containerWidth: CGFloat
+        let containerHeight: CGFloat
+        if vw / vh >= ratio {
+            // Wider than the aspect ratio → constrained by height
+            containerHeight = vh
+            containerWidth = vh * ratio
+        } else {
+            // Taller than the aspect ratio → fill width
+            containerWidth = vw
+            containerHeight = vw / ratio
+        }
+
+        container.frame = CGRect(
+            x: (vw - containerWidth) / 2,
+            y: (vh - containerHeight) / 2,
+            width: containerWidth,
+            height: containerHeight
+        )
     }
 
     func updateAspectRatio(_ aspectRatio: Double) {
-        // Remove old aspect ratio constraint if it exists
-        if let oldConstraint = aspectRatioConstraint {
-            oldConstraint.isActive = false
-        }
-
-        // Create new aspect ratio constraint (height = width / aspectRatio)
-        let newConstraint = imaContainerView.heightAnchor.constraint(
-            equalTo: imaContainerView.widthAnchor,
-            multiplier: 1.0 / aspectRatio
-        )
-        newConstraint.isActive = true
-        aspectRatioConstraint = newConstraint
-
-        debugPrintWithTimestamp("📐 Updated IMA container aspect ratio to \(aspectRatio) (multiplier: \(1.0/aspectRatio))")
+        guard aspectRatio != currentAspectRatio else { return }
+        currentAspectRatio = aspectRatio
+        view.setNeedsLayout()
+        debugPrintWithTimestamp("📐 Updated IMA container aspect ratio to \(aspectRatio)")
     }
 
     func setAdContainerVisible(_ visible: Bool) {
         debugPrintWithTimestamp("📺 Setting IMA container visible: \(visible)")
-        debugPrintWithTimestamp("   Container frame: \(imaContainerView.frame)")
-        debugPrintWithTimestamp("   Container hidden before: \(imaContainerView.isHidden)")
+        // hostingController.view stays on top (added last in viewDidLoad). The shared
+        // imaContainerView is behind it (insertSubview at: 0 in viewWillAppear).
+        // allowsHitTesting(false) SwiftUI areas let UIHostingController.hitTest return
+        // nil, falling through to imaContainerView for IMA touches.
+        viewModel.imaContainerView.isHidden = !visible
+        debugPrintWithTimestamp("   Container hidden: \(viewModel.imaContainerView.isHidden)")
 
-        imaContainerView.isHidden = !visible
-
+        #if DEBUG
+        // Re-log hierarchy when ad becomes visible — IMA may have injected views
         if visible {
-            // Bring IMA container to front when showing ads
-            view.bringSubviewToFront(imaContainerView)
-            debugPrintWithTimestamp("   Brought IMA container to front")
-        } else {
-            // Send IMA container to back when not showing ads
-            view.sendSubviewToBack(imaContainerView)
-            debugPrintWithTimestamp("   Sent IMA container to back")
+            hasLoggedSubviewHierarchy = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, !(self.hasLoggedSubviewHierarchy) else { return }
+                self.hasLoggedSubviewHierarchy = true
+                self.logViewHierarchy()
+            }
         }
-
-        debugPrintWithTimestamp("   Container hidden after: \(imaContainerView.isHidden)")
+        #endif
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-
-        // Update hosting controller frame
         hostingController.view.frame = view.bounds
+        layoutIMAContainerIfNeeded()
 
-        // After AutoLayout repositions imaContainerView, trigger a layout pass on its
-        // subviews so IMA's internal views re-size to the updated container bounds.
-        imaContainerView.setNeedsLayout()
-        imaContainerView.layoutIfNeeded()
+        // Tell IMA to re-fit its internal subviews to the updated container bounds.
+        let container = viewModel.imaContainerView
+        if container.superview === view {
+            container.setNeedsLayout()
+            container.layoutIfNeeded()
+        }
+
+        #if DEBUG
+        // Log the complete subview hierarchy once to detect IMA-injected views
+        if !hasLoggedSubviewHierarchy && view.subviews.count > 0 {
+            hasLoggedSubviewHierarchy = true
+            logViewHierarchy()
+        }
+        #endif
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
 
-        // Force AutoLayout to resolve the new bounds during the rotation animation,
-        // then re-layout IMA's internal subviews once the transition completes.
         coordinator.animate(alongsideTransition: { [weak self] _ in
             self?.view.setNeedsLayout()
             self?.view.layoutIfNeeded()
         }, completion: { [weak self] _ in
-            guard let self else { return }
-            self.imaContainerView.setNeedsLayout()
-            self.imaContainerView.layoutIfNeeded()
+            guard let self, self.viewModel.imaContainerView.superview === self.view else { return }
+            self.viewModel.imaContainerView.setNeedsLayout()
+            self.viewModel.imaContainerView.layoutIfNeeded()
         })
     }
 
     func updateContent(_ content: Content) {
         hostingController.rootView = content
     }
+
+    #if DEBUG
+    /// Logs the complete UIKit subview hierarchy of this VC's view to detect IMA-injected views.
+    private func logViewHierarchy() {
+        debugPrintWithTimestamp("🔍 AdContainerVC.view subviews (\(view.subviews.count) total):")
+        for (i, subview) in view.subviews.enumerated() {
+            let isIMA = subview === viewModel.imaContainerView
+            let isHC = subview === hostingController.view
+            let label = isIMA ? " [imaContainer]" : isHC ? " [hostingController]" : " [UNKNOWN — IMA injected?]"
+            debugPrintWithTimestamp("   [\(i)] \(type(of: subview)) frame=\(subview.frame) userInteraction=\(subview.isUserInteractionEnabled)\(label)")
+
+            if let gestures = subview.gestureRecognizers, !gestures.isEmpty {
+                for g in gestures {
+                    debugPrintWithTimestamp("      gesture: \(type(of: g)) cancelsTouches=\(g.cancelsTouchesInView) delaysTouchesBegan=\(g.delaysTouchesBegan)")
+                }
+            }
+
+            // Also check subviews of each view (one level deep)
+            for (j, sub2) in subview.subviews.enumerated() {
+                debugPrintWithTimestamp("      [\(i).\(j)] \(type(of: sub2)) frame=\(sub2.frame) userInteraction=\(sub2.isUserInteractionEnabled)")
+                if let gestures = sub2.gestureRecognizers, !gestures.isEmpty {
+                    for g in gestures {
+                        debugPrintWithTimestamp("         gesture: \(type(of: g)) cancelsTouches=\(g.cancelsTouchesInView) delaysTouchesBegan=\(g.delaysTouchesBegan)")
+                    }
+                }
+            }
+        }
+
+        if let gestures = view.gestureRecognizers, !gestures.isEmpty {
+            debugPrintWithTimestamp("   ROOT VIEW gestures:")
+            for g in gestures {
+                debugPrintWithTimestamp("      \(type(of: g)) cancelsTouches=\(g.cancelsTouchesInView) delaysTouchesBegan=\(g.delaysTouchesBegan)")
+            }
+        }
+    }
+    #endif
 }
 
 // MARK: - Player View Representable
@@ -712,6 +885,33 @@ private struct PlayerViewRepresentable: UIViewControllerRepresentable {
         }
     }
 }
+
+// MARK: - Debug Hit Area Borders
+
+#if DEBUG
+extension View {
+    /// Adds a colored debug border to visualize view frames and hit areas.
+    /// Use different colors per layer to identify which view receives touches.
+    func debugBorder(_ color: Color, label: String = "") -> some View {
+        self
+            .overlay(
+                Rectangle()
+                    .strokeBorder(color, lineWidth: 2)
+                    .allowsHitTesting(false)
+            )
+            .overlay(alignment: .topLeading) {
+                if !label.isEmpty {
+                    Text(label)
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(color)
+                        .padding(2)
+                        .background(.black.opacity(0.7))
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+#endif
 
 // MARK: - Preview
 
