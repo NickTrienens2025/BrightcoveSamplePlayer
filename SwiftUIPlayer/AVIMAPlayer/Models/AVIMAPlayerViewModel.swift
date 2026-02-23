@@ -1212,6 +1212,11 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         mainPlaybackController = nil
         mainPlayer = nil
         adPlayer = nil
+
+        // Reset playback state so the view shows idle (not "unavailable")
+        // and initializationStatus allows re-initialization when the view reappears.
+        playbackMode = .idle
+        initializationStatus = .notStarted
     }
 
     // MARK: - Error Types

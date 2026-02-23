@@ -171,13 +171,6 @@ struct VideoPlayerControlsView: View {
                 adProgressBanner(adProgress)
             }
 
-            // Progress bar
-            if configuration.progress.showSeekBar {
-                seekProgressBar
-            } else if configuration.progress.showNonInteractiveProgress {
-                nonInteractiveProgressBar
-            }
-
             // Transport controls
             HStack(spacing: 24) {
                 // Time labels
@@ -211,6 +204,13 @@ struct VideoPlayerControlsView: View {
                 if !configuration.layout.showTimeLabels {
                     Spacer()
                 }
+            }
+
+            // Progress bar — at the very bottom, closest to the screen edge
+            if configuration.progress.showSeekBar {
+                seekProgressBar
+            } else if configuration.progress.showNonInteractiveProgress {
+                nonInteractiveProgressBar
             }
         }
     }

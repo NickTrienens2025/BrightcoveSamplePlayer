@@ -583,20 +583,103 @@ private class AdContainerViewController<Content: View>: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        debugPrintWithTimestamp("📺 AdContainerVC.viewWillAppear — \(self) window=\(view.window != nil)")
+        reparentIMAContainerIfNeeded()
+    }
 
+    /// Reparents the shared IMA container into this VC's view if it isn't already.
+    ///
+    /// Called from `viewWillAppear` (initial/reappear) and `viewWillTransition`
+    /// (orientation changes during fullscreen presentation). This ensures IMA always
+    /// renders in whichever `AdContainerViewController` is currently on screen.
+    ///
+    /// Also transfers any IMA-added child view controllers (e.g. `IMAAdViewController`)
+    /// from the previous parent to this VC to prevent `UIViewControllerHierarchyInconsistency`.
+    ///
+    /// **Two-phase transfer:**
+    /// 1. Orphan IMA child VCs (removeFromParent) — now they have NO parent
+    /// 2. Move the container view (insertSubview) — UIKit won't check parentless children
+    /// 3. Adopt IMA child VCs (addChild) — child view IS now in self's hierarchy
+    private func reparentIMAContainerIfNeeded() {
         let container = viewModel.imaContainerView
 
-        // Reparent the shared IMA container into this VC's view if needed.
-        // This fires on initial appearance AND when the embedded VC reappears after
-        // a fullscreen cover is dismissed, smoothly claiming the IMA rendering surface
-        // back from the (now-gone) fullscreen VC.
         if container.superview !== view {
+            // Capture previous parent VC BEFORE detaching (responder chain breaks after removeFromSuperview).
+            let previousParentVC = findViewController(for: container)
+
+            debugPrintWithTimestamp("🔄 Reparenting IMA container — previousParent: \(String(describing: previousParentVC)) → self: \(self)")
+            debugPrintWithTimestamp("   previousParent.children: \(previousParentVC?.children.map { String(describing: type(of: $0)) } ?? [])")
+            debugPrintWithTimestamp("   self.children: \(self.children.map { String(describing: type(of: $0)) })")
+
+            // Phase 1: Orphan IMA child VCs so they have NO parent.
+            // This must happen BEFORE insertSubview — UIKit validates that any
+            // child VC whose view is a descendant of the moved view has the
+            // correct parent. Orphaned VCs (parent == nil) pass this check.
+            let orphanedChildren: [UIViewController]
+            if let previousParentVC {
+                orphanedChildren = orphanIMAChildViewControllers(from: previousParentVC)
+            } else {
+                orphanedChildren = []
+            }
+
+            // Phase 2: Move the container view. Safe because IMA child VCs are parentless.
             container.removeFromSuperview()
             view.insertSubview(container, at: 0)   // Behind hostingController.view
             view.setNeedsLayout()
+
+            // Phase 3: Adopt orphaned IMA child VCs into this VC.
+            // Now their views ARE inside self's hierarchy, so addChild succeeds.
+            for child in orphanedChildren {
+                self.addChild(child)
+                child.didMove(toParent: self)
+            }
+
+            debugPrintWithTimestamp("   ✅ Reparenting complete — self.children: \(self.children.map { String(describing: type(of: $0)) })")
         }
 
         viewModel.setAdContainer(containerView: container, viewController: self)
+    }
+
+    /// Removes IMA child view controllers from their current parent, returning
+    /// the orphaned VCs so they can be adopted by the new parent after the
+    /// container view has been moved.
+    ///
+    /// The IMA SDK adds `IMAAdViewController` as a child of whichever
+    /// `AdContainerViewController` was passed in `IMAAdDisplayContainer`.
+    /// Orphaning them (removing from parent without adding to a new one)
+    /// lets the container view be moved without triggering
+    /// `UIViewControllerHierarchyInconsistency`.
+    @discardableResult
+    private func orphanIMAChildViewControllers(from previousParent: UIViewController) -> [UIViewController] {
+        let container = viewModel.imaContainerView
+
+        let imaChildren = previousParent.children.filter { child in
+            child !== hostingController && child.view.isDescendant(of: container)
+        }
+
+        guard !imaChildren.isEmpty else {
+            debugPrintWithTimestamp("   🔍 No IMA child VCs to transfer")
+            return []
+        }
+
+        debugPrintWithTimestamp("   🔄 Orphaning \(imaChildren.count) IMA child VC(s): \(imaChildren.map { String(describing: type(of: $0)) })")
+
+        for child in imaChildren {
+            child.willMove(toParent: nil)
+            child.removeFromParent()
+        }
+
+        return imaChildren
+    }
+
+    /// Walks the responder chain from a view's superview to find its owning VC.
+    private func findViewController(for view: UIView) -> UIViewController? {
+        var responder: UIResponder? = view.superview
+        while let current = responder {
+            if let vc = current as? UIViewController { return vc }
+            responder = current.next
+        }
+        return nil
     }
 
     override func viewDidLoad() {
@@ -679,13 +762,31 @@ private class AdContainerViewController<Content: View>: UIViewController {
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
 
+        debugPrintWithTimestamp("📺 AdContainerVC.viewWillTransition — \(self) size=\(size) window=\(view.window != nil)")
+
         coordinator.animate(alongsideTransition: { [weak self] _ in
             self?.view.setNeedsLayout()
             self?.view.layoutIfNeeded()
         }, completion: { [weak self] _ in
-            guard let self, self.viewModel.imaContainerView.superview === self.view else { return }
-            self.viewModel.imaContainerView.setNeedsLayout()
-            self.viewModel.imaContainerView.layoutIfNeeded()
+            guard let self else { return }
+
+            debugPrintWithTimestamp("📺 AdContainerVC.viewWillTransition COMPLETION — \(self) window=\(self.view.window != nil)")
+
+            // Reparent IMA container after the transition completes, when the
+            // view hierarchy is stable. During `.fullScreenCover` transitions,
+            // both the embedded and fullscreen VCs receive `viewWillTransition`,
+            // but calling `insertSubview` mid-transition crashes UIKit.
+            // Deferring to completion ensures only the on-screen VC claims it.
+            if self.view.window != nil {
+                self.reparentIMAContainerIfNeeded()
+            } else {
+                debugPrintWithTimestamp("   ⏭️ Skipping reparent — no window")
+            }
+
+            if self.viewModel.imaContainerView.superview === self.view {
+                self.viewModel.imaContainerView.setNeedsLayout()
+                self.viewModel.imaContainerView.layoutIfNeeded()
+            }
         })
     }
 
