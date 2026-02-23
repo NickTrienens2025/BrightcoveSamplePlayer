@@ -27,41 +27,23 @@ struct AVIMAAdControlsView: View {
     var body: some View {
         VStack {
             Spacer()
-                #if DEBUG
-                .debugBorder(.orange, label: "Spacer")
-                #endif
 
             HStack(spacing: 24) {
                 Spacer()
 
                 if viewModel.canSkip {
                     skipButton
-                        #if DEBUG
-                        .debugBorder(.cyan, label: "skip")
-                        #endif
                 }
 
                 playPauseButton
-                    #if DEBUG
-                    .debugBorder(.cyan, label: "play/pause")
-                    #endif
 
                 if showMute {
                     muteButton
-                        #if DEBUG
-                        .debugBorder(.cyan, label: "mute")
-                        #endif
                 }
             }
             .font(.title2)
             .padding()
-            #if DEBUG
-            .debugBorder(.pink, label: "HStack btns")
-            #endif
         }
-        #if DEBUG
-        .debugBorder(.purple, label: "AdControls VStack")
-        #endif
     }
 
     // MARK: - Components

@@ -39,16 +39,22 @@ struct VideoPlayerControlsView: View {
     /// at the leading position of the top bar so it never overlaps trailing CC/Mute buttons.
     private let onExpandAction: (() -> Void)?
 
+    /// Optional close action. When non-nil, a close (X) button is shown
+    /// at the leading position of the top bar. Used for fullscreen dismiss.
+    private let onCloseAction: (() -> Void)?
+
     // MARK: - Initialization
 
     init(
         configuration: VideoPlayerControlsConfiguration,
         delegate: VideoPlayerControlsDelegate,
-        onExpandAction: (() -> Void)? = nil
+        onExpandAction: (() -> Void)? = nil,
+        onCloseAction: (() -> Void)? = nil
     ) {
         self.configuration = configuration
         self.stateProvider = VideoPlayerControlsStateProvider(delegate: delegate)
         self.onExpandAction = onExpandAction
+        self.onCloseAction = onCloseAction
     }
 
     // MARK: - Body
@@ -79,7 +85,7 @@ struct VideoPlayerControlsView: View {
                     .padding(.bottom, 16)
             }
         }
-        .background(backgroundGradient)
+        .background(backgroundGradient.allowsHitTesting(false))
     }
 
     // MARK: - Top Controls Bar
@@ -87,7 +93,12 @@ struct VideoPlayerControlsView: View {
     @ViewBuilder
     private var topControlsBar: some View {
         HStack(spacing: 16) {
-            // Expand button — always at leading so it never overlaps trailing CC/Mute buttons.
+            // Close button — leading position for fullscreen dismiss.
+            if let onCloseAction {
+                closeOverlayButton(action: onCloseAction)
+            }
+
+            // Expand button — leading position so it never overlaps trailing CC/Mute buttons.
             if let onExpandAction {
                 expandButton(action: onExpandAction)
             }
@@ -206,6 +217,18 @@ struct VideoPlayerControlsView: View {
 
     // MARK: - Individual Controls
 
+    private func closeOverlayButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(8)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
+    }
+
     private func expandButton(action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -306,17 +329,36 @@ struct VideoPlayerControlsView: View {
     @ViewBuilder
     private var seekProgressBar: some View {
         VStack(spacing: 4) {
-            Slider(
-                value: Binding(
-                    get: { stateProvider.currentTime },
-                    set: { newValue in
-                        stateProvider.handleAction(.seek(to: newValue))
+            ZStack {
+                // Interactive slider
+                Slider(
+                    value: Binding(
+                        get: { stateProvider.currentTime },
+                        set: { newValue in
+                            stateProvider.handleAction(.seek(to: newValue))
+                        }
+                    ),
+                    in: 0...max(stateProvider.duration, 1)
+                )
+                .tint(.white)
+                .disabled(!stateProvider.canSeek)
+
+                // Midroll marker dots overlaid on the slider track
+                if !stateProvider.midrollMarkerPositions.isEmpty {
+                    GeometryReader { geometry in
+                        ForEach(stateProvider.midrollMarkerPositions, id: \.self) { position in
+                            Circle()
+                                .fill(Color.yellow)
+                                .frame(width: 8, height: 8)
+                                .position(
+                                    x: geometry.size.width * position,
+                                    y: geometry.size.height / 2
+                                )
+                        }
                     }
-                ),
-                in: 0...max(stateProvider.duration, 1)
-            )
-            .tint(.white)
-            .disabled(!stateProvider.canSeek)
+                    .allowsHitTesting(false)
+                }
+            }
         }
     }
 
@@ -430,6 +472,7 @@ class VideoPlayerControlsStateProvider: ObservableObject {
     @Published var canSkip: Bool = false
     @Published var closedCaptionsEnabled: Bool = false
     @Published var adProgress: AdProgressInfo?
+    @Published var midrollMarkerPositions: [Double] = []
 
     private var updateTimer: Timer?
 
@@ -477,6 +520,7 @@ class VideoPlayerControlsStateProvider: ObservableObject {
         canSkip = delegate.canSkip
         closedCaptionsEnabled = delegate.closedCaptionsEnabled
         adProgress = delegate.adProgress
+        midrollMarkerPositions = delegate.midrollMarkerPositions
     }
 }
 
@@ -502,6 +546,7 @@ class MockVideoPlayerControlsDelegate: VideoPlayerControlsDelegate {
         isSkippable: false,
         skipTimeRemaining: nil
     )
+    var midrollMarkerPositions: [Double] = [0.5]
 
     func handleControlAction(_ action: VideoPlayerControlAction) {
         print("Action: \(action)")

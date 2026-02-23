@@ -50,7 +50,6 @@ struct AVIMAEmbeddedPlayerView: View {
             // shared AVPlayer is rendered only by the fullscreen's AVPlayerViewController.
             suppressPlayerView: isFullscreen,
             onExpand: {
-                debugPrintWithTimestamp("🔴🔴🔴 EXPAND TAPPED — setting isFullscreen = true")
                 isFullscreen = true
             },
             viewModel: viewModel
@@ -72,42 +71,25 @@ struct AVIMAEmbeddedPlayerView: View {
     /// Uses `cleanupOnDisappear: false` so dismissing this cover does NOT destroy
     /// the ViewModel — the embedded player continues using it immediately.
     ///
-    /// `showNavigationChrome: false` keeps all navigation chrome here in one place,
-    /// avoiding a doubled toolbar when both the NavigationStack and AVIMAPlayerView
-    /// would otherwise each inject toolbar items.
+    /// No NavigationStack — the video fills the entire screen edge-to-edge.
+    /// The close button lives inside the controls overlay and hides/shows with controls.
     ///
     /// `onAppear` shows controls immediately so they're visible the moment fullscreen opens.
     private var fullscreenPlayer: some View {
-        NavigationStack {
-            AVIMAPlayerView(
-                video: video,
-                allowsFullscreen: false,
-                showNavigationChrome: false,
-                cleanupOnDisappear: false,
-                viewModel: viewModel
-            )
-            .onAppear { viewModel.showControls() }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        isFullscreen = false
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                }
-                ToolbarItem(placement: .principal) {
-                    Text(video.name)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                }
-            }
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(Color.black.opacity(0.8), for: .navigationBar)
-        }
+        AVIMAPlayerView(
+            video: video,
+            allowsFullscreen: false,
+            showNavigationChrome: false,
+            cleanupOnDisappear: false,
+            onClose: {
+                isFullscreen = false
+            },
+            viewModel: viewModel
+        )
+        .background(Color.black.ignoresSafeArea())
+        .onAppear { viewModel.showControls() }
         .preferredColorScheme(.dark)
+        .persistentSystemOverlays(.hidden)
     }
 }
 

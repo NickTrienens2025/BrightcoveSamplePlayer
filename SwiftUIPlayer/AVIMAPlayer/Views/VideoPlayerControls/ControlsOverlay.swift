@@ -48,9 +48,6 @@ struct ControlsOverlay<Content: View>: View {
 
             content()
                 .frame(width: videoWidth, height: videoHeight)
-                #if DEBUG
-                .debugBorder(.white, label: "CtrlOverlay frame(\(Int(videoWidth))x\(Int(videoHeight)))")
-                #endif
                 .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
         }
     }

@@ -190,6 +190,10 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// Whether closed captions are currently enabled
     @Published private(set) var closedCaptionsEnabled: Bool = false
 
+    /// Ad cue points for the current video session.
+    /// Tracks which cue points have been played so midrolls fire only once.
+    @Published private(set) var adCuePoints: [AdCuePoint] = []
+
     /// Whether player controls are currently visible
     @Published var showingControls: Bool = true
 
@@ -222,9 +226,11 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         }
     }
 
-    /// Whether the user can seek through the content
+    /// Whether the user can seek through the content.
+    /// Blocked during midroll triggering to prevent the slider from
+    /// overwriting the seek-to-cue-point position while IMA loads.
     var canSeek: Bool {
-        playbackMode == .mainVideo
+        playbackMode == .mainVideo && !isTriggeringMidroll
     }
 
     /// Whether any player is in an error state
@@ -323,6 +329,15 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     /// Whether playback was active before backgrounding
     private var wasPlayingBeforeBackground = false
+
+    /// Whether a midroll ad is currently being triggered (prevents re-entrance)
+    private var isTriggeringMidroll = false
+
+    /// The position to resume from after a midroll completes
+    private var resumePositionAfterMidroll: TimeInterval?
+
+    /// Whether the current ad session is a midroll (vs initial pre-roll)
+    private var isMidrollAdSession = false
 
     /// Brightcove playback service for fetching videos
     private lazy var playbackService: BCOVPlaybackService = {
@@ -518,11 +533,36 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     /// Seeks to a specific time in the main video.
     ///
+    /// If the seek jumps forward past an unplayed midroll cue point, the midroll
+    /// ad is triggered first. After the ad completes, playback resumes at the
+    /// user's original target position.
+    ///
     /// - Parameter time: Target time in seconds
     /// - Note: Only works during main video playback, not during ads
     func seek(to time: TimeInterval) {
         showControls()
-        guard canSeek else { return }
+        guard canSeek else {
+            debugPrintWithTimestamp("⏩ Seek blocked — canSeek=false, mode=\(playbackMode)")
+            return
+        }
+
+        debugPrintWithTimestamp("⏩ Seek requested: \(String(format: "%.1f", currentTime))s → \(String(format: "%.1f", time))s")
+
+        // Check if seeking forward past an unplayed midroll
+        if time > currentTime,
+           let cuePointIndex = firstUnplayedMidrollBetween(start: currentTime, end: time) {
+            debugPrintWithTimestamp("⏩ Seek crosses midroll at \(adCuePoints[cuePointIndex].position)s — triggering ad first")
+            // Store the user's intended target for after the midroll
+            resumePositionAfterMidroll = time
+            let cuePosition = adCuePoints[cuePointIndex].position
+            let cmTime = CMTime(seconds: cuePosition, preferredTimescale: 600)
+            mainPlayer?.seek(to: cmTime)
+            currentTime = cuePosition
+            triggerMidrollAd(atIndex: cuePointIndex)
+            return
+        }
+
+        // Normal seek (backward or no cue point crossed)
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         mainPlayer?.seek(to: cmTime)
         currentTime = time
@@ -633,6 +673,10 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         currentAdProgress = nil
         playbackError = nil
         initializationStatus = .notStarted
+        adCuePoints = []
+        resumePositionAfterMidroll = nil
+        isTriggeringMidroll = false
+        isMidrollAdSession = false
     }
 
     // MARK: - Private Implementation
@@ -677,6 +721,15 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     private func initializePlayers(with video: AVIMAVideoItem) async throws {
         // Clean up existing players
         cleanup()
+
+        // Build ad cue points for this session
+        var cuePoints: [AdCuePoint] = [
+            AdCuePoint(position: 0, type: .preRoll)
+        ]
+        for position in video.midRollPositions {
+            cuePoints.append(AdCuePoint(position: position, type: .midRoll))
+        }
+        self.adCuePoints = cuePoints
 
         // Initialize main video player
         try await initializeMainPlayer(with: video)
@@ -773,15 +826,27 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
-            guard let self = self,
-                  self.playbackMode == .mainVideo else { return }
+            guard let self = self else { return }
 
-            self.currentTime = time.seconds
+            let secs = time.seconds
+
+            // Log mode every 10s so we can diagnose the time observer state
+            if Int(secs) % 10 == 0, secs.truncatingRemainder(dividingBy: 10) < 0.15 {
+                debugPrintWithTimestamp("🕐 TimeObserver: t=\(String(format: "%.1f", secs))s mode=\(self.playbackMode) triggering=\(self.isTriggeringMidroll) cuePoints=\(self.adCuePoints.count)")
+            }
+
+            guard self.playbackMode == .mainVideo,
+                  !self.isTriggeringMidroll else { return }
+
+            self.currentTime = secs
 
             if let duration = player.currentItem?.duration.seconds,
                duration.isFinite {
                 self.duration = duration
             }
+
+            // Check if playback crossed a midroll cue point
+            self.checkForMidrollCuePoint(at: secs)
         }
 
         // Store observer with its owning player instance
@@ -966,6 +1031,146 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         updateCaptionState()
     }
 
+    // MARK: - Midroll Ad Logic
+
+    /// Checks if playback has naturally reached an unplayed midroll cue point.
+    ///
+    /// Called from the main player time observer at 10Hz. Uses a 1.0s tolerance
+    /// window to avoid missing cue points between polling intervals.
+    private func checkForMidrollCuePoint(at currentTime: TimeInterval) {
+        guard !isTriggeringMidroll else { return }
+        guard playbackMode == .mainVideo else { return }
+
+        let tolerance: TimeInterval = 1.0
+
+        // Log every 30 seconds so we can verify the check is running
+        if Int(currentTime) % 30 == 0, currentTime.truncatingRemainder(dividingBy: 30) < 0.2 {
+            let cuePointSummary = adCuePoints.map { "[\($0.type == .midRoll ? "mid" : "pre")@\($0.position)s played=\($0.hasPlayed)]" }.joined(separator: ", ")
+            debugPrintWithTimestamp("⏱️ Midroll check at \(String(format: "%.1f", currentTime))s — cuePoints: \(cuePointSummary)")
+        }
+
+        guard let cuePointIndex = adCuePoints.firstIndex(where: { cuePoint in
+            cuePoint.type == .midRoll
+            && !cuePoint.hasPlayed
+            && currentTime >= cuePoint.position
+            && currentTime <= cuePoint.position + tolerance
+        }) else { return }
+
+        debugPrintWithTimestamp("🎯 Midroll cue point HIT at \(String(format: "%.1f", currentTime))s — cuePoint position: \(adCuePoints[cuePointIndex].position)s")
+        triggerMidrollAd(atIndex: cuePointIndex)
+    }
+
+    /// Returns the index of the first unplayed midroll between two playback times.
+    ///
+    /// Used by `seek(to:)` to detect when the user seeks past a midroll cue point.
+    ///
+    /// - Parameters:
+    ///   - start: The current playback position (exclusive)
+    ///   - end: The target seek position (inclusive)
+    /// - Returns: Index into `adCuePoints` of the first unplayed midroll, or nil
+    private func firstUnplayedMidrollBetween(start: TimeInterval, end: TimeInterval) -> Int? {
+        adCuePoints.firstIndex { cuePoint in
+            cuePoint.type == .midRoll
+            && !cuePoint.hasPlayed
+            && cuePoint.position > start
+            && cuePoint.position <= end
+        }
+    }
+
+    /// Triggers a midroll ad at the given cue point index.
+    ///
+    /// Pauses main video, marks the cue point as played, destroys the old
+    /// ads manager, and requests a fresh IMA ad. If the ad fails to load,
+    /// main video resumes automatically (closed loop).
+    ///
+    /// - Parameter index: Index into `adCuePoints`
+    private func triggerMidrollAd(atIndex index: Int) {
+        guard index < adCuePoints.count else { return }
+        guard !isTriggeringMidroll else { return }
+
+        isTriggeringMidroll = true
+        isMidrollAdSession = true
+
+        // Mark cue point as played (prevents re-triggering)
+        adCuePoints[index].hasPlayed = true
+
+        // Store resume position if not already set by seek(to:)
+        if resumePositionAfterMidroll == nil {
+            resumePositionAfterMidroll = currentTime
+        }
+
+        debugPrintWithTimestamp("🎯 Triggering midroll ad at \(adCuePoints[index].position)s")
+
+        // Pause main video
+        mainPlaybackController?.pause()
+        mainPlayer?.pause()
+
+        // Destroy previous ads manager (it's one-shot per ad break)
+        adsManager?.destroy()
+        adsManager = nil
+
+        // Request new ad
+        guard let containerView = adContainerView,
+              let viewController = adViewController else {
+            debugPrintWithTimestamp("⚠️ No ad container for midroll, resuming main video")
+            resumeAfterMidroll()
+            return
+        }
+
+        guard let video = currentVideo else {
+            resumeAfterMidroll()
+            return
+        }
+
+        let adDisplayContainer = IMAAdDisplayContainer(
+            adContainer: containerView,
+            viewController: viewController
+        )
+
+        // Append a unique correlator so IMA treats this as a fresh ad request
+        // (the default ad tag ends with &correlator= which is empty)
+        let adTagWithCorrelator = video.adTagURL + "\(Int(Date().timeIntervalSince1970))"
+
+        let request = IMAAdsRequest(
+            adTagUrl: adTagWithCorrelator,
+            adDisplayContainer: adDisplayContainer,
+            contentPlayhead: nil,
+            userContext: nil
+        )
+
+        // Ensure loader delegate is still set (it should be, but safety check)
+        adsLoader?.delegate = self
+
+        debugPrintWithTimestamp("📺 Requesting midroll ad — adsLoader nil? \(adsLoader == nil)")
+        adsLoader?.requestAds(with: request)
+
+        // If adsLoader is nil, we can't request ads — fall back to resume
+        if adsLoader == nil {
+            debugPrintWithTimestamp("❌ adsLoader is nil — cannot request midroll ad, resuming")
+            resumeAfterMidroll()
+        }
+    }
+
+    /// Resumes main video after a midroll ad completes or fails.
+    ///
+    /// If the user had seeked past the midroll, jumps to their original target position.
+    private func resumeAfterMidroll() {
+        let resumePosition = resumePositionAfterMidroll
+
+        isTriggeringMidroll = false
+        isMidrollAdSession = false
+        resumePositionAfterMidroll = nil
+
+        switchToMainVideoMode()
+
+        // If the user seeked past the midroll, jump to their target
+        if let resumePosition {
+            let cmTime = CMTime(seconds: resumePosition, preferredTimescale: 600)
+            mainPlayer?.seek(to: cmTime)
+            currentTime = resumePosition
+        }
+    }
+
     /// Applies the current closed caption state to AVFoundation.
     ///
     /// Uses `closedCaptionsEnabled` as the source of truth rather than reading
@@ -1088,12 +1293,16 @@ extension AVIMAPlayerViewModel: BCOVPlaybackControllerDelegate {
 extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
 
     func adsLoader(_ loader: IMAAdsLoader, adsLoadedWith adsLoadedData: IMAAdsLoadedData) {
-        debugPrintWithTimestamp("✅ Ads loaded successfully")
+        debugPrintWithTimestamp("✅ Ads loaded successfully (\(isMidrollAdSession ? "midroll" : "pre-roll"))")
 
         guard let manager = adsLoadedData.adsManager else {
             debugPrintWithTimestamp("❌ Failed to get ads manager")
             adState = .error("Failed to get ads manager")
-            switchToMainVideoMode()
+            if isMidrollAdSession {
+                resumeAfterMidroll()
+            } else {
+                switchToMainVideoMode()
+            }
             return
         }
 
@@ -1101,6 +1310,12 @@ extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
         manager.delegate = self
         manager.initialize(with: nil)
         self.adsManager = manager
+
+        // Mark pre-roll as played
+        if !isMidrollAdSession,
+           let preRollIndex = adCuePoints.firstIndex(where: { $0.type == .preRoll && !$0.hasPlayed }) {
+            adCuePoints[preRollIndex].hasPlayed = true
+        }
 
         // Start ads
         debugPrintWithTimestamp("▶️ Starting ad playback")
@@ -1114,11 +1329,17 @@ extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
         debugPrintWithTimestamp("   Error code: \(adErrorData.adError.code)")
 
         adState = .error(errorMessage)
-        playbackError = PlayerError.adLoadFailed(errorMessage)
 
-        // Ad failed, skip to main video and autoplay
-        debugPrintWithTimestamp("⏩ Skipping to main video")
-        switchToMainVideoMode()
+        if isMidrollAdSession {
+            // Midroll failed — resume main video silently (non-fatal)
+            debugPrintWithTimestamp("⏩ Midroll ad failed, resuming main video")
+            resumeAfterMidroll()
+        } else {
+            // Pre-roll failed — show error, skip to main video
+            playbackError = PlayerError.adLoadFailed(errorMessage)
+            debugPrintWithTimestamp("⏩ Pre-roll failed, skipping to main video")
+            switchToMainVideoMode()
+        }
     }
 }
 
@@ -1159,14 +1380,22 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
             currentAd = nil
 
         case .ALL_ADS_COMPLETED:
-            debugPrintWithTimestamp("   All ads completed - switching to main video")
+            debugPrintWithTimestamp("   All ads completed (\(isMidrollAdSession ? "midroll" : "pre-roll"))")
             currentAd = nil
-            switchToMainVideoMode()
+            if isMidrollAdSession {
+                resumeAfterMidroll()
+            } else {
+                switchToMainVideoMode()
+            }
 
         case .SKIPPED:
-            debugPrintWithTimestamp("   Ad skipped - switching to main video")
+            debugPrintWithTimestamp("   Ad skipped (\(isMidrollAdSession ? "midroll" : "pre-roll"))")
             currentAd = nil
-            switchToMainVideoMode()
+            if isMidrollAdSession {
+                resumeAfterMidroll()
+            } else {
+                switchToMainVideoMode()
+            }
 
         default:
             debugPrintWithTimestamp("   Other event: \(event.type)")
@@ -1177,10 +1406,15 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
     func adsManager(_ adsManager: IMAAdsManager, didReceive error: IMAAdError) {
         let errorMessage = error.message ?? "Unknown ad error"
         adState = .error(errorMessage)
-        playbackError = PlayerError.adLoadFailed(errorMessage)
 
-        // Ad error, skip to main video and autoplay
-        switchToMainVideoMode()
+        if isMidrollAdSession {
+            // Midroll error — resume silently
+            debugPrintWithTimestamp("❌ Midroll ad error: \(errorMessage), resuming")
+            resumeAfterMidroll()
+        } else {
+            playbackError = PlayerError.adLoadFailed(errorMessage)
+            switchToMainVideoMode()
+        }
     }
 
     func adsManagerDidRequestContentPause(_ adsManager: IMAAdsManager) {
@@ -1190,8 +1424,11 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
     }
 
     func adsManagerDidRequestContentResume(_ adsManager: IMAAdsManager) {
-        // Ad completed, resume main video with autoplay
-        switchToMainVideoMode()
+        if isMidrollAdSession {
+            resumeAfterMidroll()
+        } else {
+            switchToMainVideoMode()
+        }
     }
 
     /// Updates ad progress information.
@@ -1276,5 +1513,13 @@ extension AVIMAPlayerViewModel: VideoPlayerControlsDelegate {
             isSkippable: progress.isSkippable,
             skipTimeRemaining: progress.skipTimeRemaining
         )
+    }
+
+    /// Normalized midroll cue point positions (0.0–1.0) for timeline markers.
+    var midrollMarkerPositions: [Double] {
+        guard duration > 0 else { return [] }
+        return adCuePoints
+            .filter { $0.type == .midRoll }
+            .compactMap { $0.normalizedPosition(forDuration: duration) }
     }
 }

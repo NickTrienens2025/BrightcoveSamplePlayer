@@ -5,8 +5,42 @@
 //  A model representing a video with IMA ad integration.
 //
 
+import CoreMedia
 import Foundation
 import BrightcovePlayerSDK
+
+// MARK: - Ad Cue Point Model
+
+/// Represents an ad insertion point during video playback.
+///
+/// Tracks both the position and whether the ad has already played
+/// in the current session to support once-per-session midroll behavior.
+struct AdCuePoint: Identifiable, Equatable {
+    let id = UUID()
+
+    /// Position in the video timeline (seconds)
+    let position: TimeInterval
+
+    /// Type of cue point
+    let type: CuePointType
+
+    /// Whether this cue point has already played in the current session
+    var hasPlayed: Bool = false
+
+    enum CuePointType: Equatable {
+        /// Pre-roll ad (position == 0)
+        case preRoll
+        /// Mid-roll ad (0 < position < duration)
+        case midRoll
+    }
+
+    /// Normalized position (0.0 to 1.0) relative to video duration.
+    /// Returns nil if duration is unavailable, zero, or position exceeds duration.
+    func normalizedPosition(forDuration duration: TimeInterval) -> Double? {
+        guard duration > 0, position <= duration else { return nil }
+        return position / duration
+    }
+}
 
 /// Default IMA ad tag URL used for all videos.
 ///
@@ -57,6 +91,9 @@ struct AVIMAVideoItem: Identifiable, Equatable {
     /// Aspect ratio of the video (width / height)
     let aspectRatio: Double
 
+    /// Midroll ad positions in seconds (empty = no midrolls)
+    let midRollPositions: [TimeInterval]
+
     // MARK: - Initialization
 
     /// Creates an IMA video item with all required properties.
@@ -69,6 +106,7 @@ struct AVIMAVideoItem: Identifiable, Equatable {
     ///   - duration: Optional video duration in seconds
     ///   - adTagURL: IMA ad tag URL for ad insertion (defaults to kDefaultIMAAdTagURL)
     ///   - aspectRatio: Video aspect ratio (width/height), defaults to 16:9
+    ///   - midRollPositions: Midroll ad positions in seconds (defaults to empty)
     ///   - video: Brightcove video object
     init(
         id: String,
@@ -78,6 +116,7 @@ struct AVIMAVideoItem: Identifiable, Equatable {
         duration: TimeInterval? = nil,
         adTagURL: String = kDefaultIMAAdTagURL,
         aspectRatio: Double = 16.0/9.0,
+        midRollPositions: [TimeInterval] = [],
         video: BCOVVideo
     ) {
         self.id = id
@@ -87,17 +126,20 @@ struct AVIMAVideoItem: Identifiable, Equatable {
         self.duration = duration
         self.adTagURL = adTagURL
         self.aspectRatio = aspectRatio
+        self.midRollPositions = midRollPositions
         self.video = video
     }
 
     /// Creates an IMA video item from a Brightcove video object.
     ///
-    /// Extracts metadata from the BCOVVideo properties, adds pre-roll ad cue points,
-    /// and uses the default ad tag.
+    /// Extracts metadata from the BCOVVideo properties, adds pre-roll and midroll
+    /// ad cue points, and uses the default ad tag.
     ///
-    /// - Parameter video: The Brightcove video object
+    /// - Parameters:
+    ///   - video: The Brightcove video object
+    ///   - midRollPositions: Midroll ad positions in seconds (defaults to 180s = 3 minutes)
     /// - Returns: AVIMAVideoItem if video has required ID and name properties, nil otherwise
-    static func from(video: BCOVVideo) -> AVIMAVideoItem? {
+    static func from(video: BCOVVideo, midRollPositions: [TimeInterval] = [180]) -> AVIMAVideoItem? {
         guard let videoId = video.properties[BCOVVideo.PropertyKeyId] as? String,
               let videoName = video.properties[BCOVVideo.PropertyKeyName] as? String else {
             return nil
@@ -125,8 +167,6 @@ struct AVIMAVideoItem: Identifiable, Equatable {
 
         // Extract aspect ratio from video source
         let aspectRatio: Double = {
-            // Try to get dimensions from the video properties
-            // Brightcove stores frame width/height in the properties
             if let frameWidth = video.properties["frame_width"] as? NSNumber,
                let frameHeight = video.properties["frame_height"] as? NSNumber {
                 let w = frameWidth.doubleValue
@@ -136,14 +176,12 @@ struct AVIMAVideoItem: Identifiable, Equatable {
                     return w / h
                 }
             }
-
-            // Fallback to 16:9 if dimensions not available
             debugPrintWithTimestamp("📐 No video dimensions found, using 16:9 default")
             return 16.0 / 9.0
         }()
 
-        // Add pre-roll ad cue point at position 0 (before content starts)
-        let videoWithAds = addPreRollCuePoint(to: video)
+        // Add pre-roll + midroll ad cue points
+        let videoWithAds = addAdCuePoints(to: video, midRollPositions: midRollPositions)
 
         return AVIMAVideoItem(
             id: videoId,
@@ -153,45 +191,44 @@ struct AVIMAVideoItem: Identifiable, Equatable {
             duration: duration,
             adTagURL: kDefaultIMAAdTagURL,
             aspectRatio: aspectRatio,
+            midRollPositions: midRollPositions,
             video: videoWithAds
         )
     }
 
-    /// Adds a pre-roll ad cue point to a Brightcove video.
+    /// Adds pre-roll and midroll ad cue points to a Brightcove video.
     ///
-    /// This creates a cue point at position 0 (before the content starts)
-    /// to signal that a pre-roll ad should play.
+    /// Creates a cue point at position 0 (pre-roll) and at each midroll position.
+    /// Avoids duplicating cue points that already exist on the video.
     ///
-    /// - Parameter video: The original BCOVVideo
-    /// - Returns: A new BCOVVideo with the pre-roll cue point added
-    private static func addPreRollCuePoint(to video: BCOVVideo) -> BCOVVideo {
-        // Create a pre-roll cue point at time 0
-        // Note: "ad" is the standard type for advertising cue points
-        let cuePoint = BCOVCuePoint(
-            withType: "ad",
-            position: CMTime.zero
-        )
+    /// - Parameters:
+    ///   - video: The original BCOVVideo
+    ///   - midRollPositions: Midroll positions in seconds
+    /// - Returns: A new BCOVVideo with the ad cue points added
+    private static func addAdCuePoints(to video: BCOVVideo, midRollPositions: [TimeInterval]) -> BCOVVideo {
+        var cuePoints: [BCOVCuePoint] = [
+            BCOVCuePoint(withType: "ad", position: CMTime.zero)
+        ]
 
-        // Get existing cue points - cuePoints property is not optional
-        let existingCuePoints = (video.cuePoints?.array as? [BCOVCuePoint]) ?? [BCOVCuePoint]()
-        var allCuePoints = existingCuePoints
-
-        // Add pre-roll if not already present
-        let hasPreRoll = allCuePoints.contains { existingCuePoint in
-            existingCuePoint.position == CMTime.zero &&
-            existingCuePoint.type == "ad"
+        for position in midRollPositions {
+            cuePoints.append(
+                BCOVCuePoint(
+                    withType: "ad",
+                    position: CMTime(seconds: position, preferredTimescale: 600)
+                )
+            )
         }
 
-        if !hasPreRoll {
-            allCuePoints.insert(cuePoint, at: 0)
-        }
+        // Merge with existing, avoiding duplicates
+        let existing = (video.cuePoints?.array as? [BCOVCuePoint]) ?? []
+        let existingPositions = Set(existing.map { $0.position.seconds })
+        let newCuePoints = cuePoints.filter { !existingPositions.contains($0.position.seconds) }
+        let allCuePoints = existing + newCuePoints
 
-        // Create new cue point collection
-        let cuePointCollection = BCOVCuePointCollection(withArray: allCuePoints)
+        let collection = BCOVCuePointCollection(withArray: allCuePoints)
 
-        // Create new video with updated cue points
         return video.update { mutableVideo in
-            mutableVideo.cuePoints = cuePointCollection
+            mutableVideo.cuePoints = collection
         }
     }
 
@@ -244,7 +281,6 @@ extension AVIMAVideoItem {
                 description: "Demonstrates pre-roll ad playback before main content",
                 thumbnailURL: nil,
                 duration: 120,
-                // Uses default ad tag (kDefaultIMAAdTagURL)
                 video: video1
             ),
             AVIMAVideoItem(
@@ -252,8 +288,8 @@ extension AVIMAVideoItem {
                 name: "Sample Video with Mid-roll",
                 description: "Demonstrates mid-roll ad insertion at cue points",
                 thumbnailURL: nil,
-                duration: 180,
-                // Uses default ad tag (kDefaultIMAAdTagURL)
+                duration: 300,
+                midRollPositions: [180],
                 video: video2
             ),
             AVIMAVideoItem(
@@ -262,7 +298,6 @@ extension AVIMAVideoItem {
                 description: "Demonstrates skippable ad functionality",
                 thumbnailURL: nil,
                 duration: 150,
-                // Uses default ad tag (kDefaultIMAAdTagURL)
                 video: video3
             )
         ]

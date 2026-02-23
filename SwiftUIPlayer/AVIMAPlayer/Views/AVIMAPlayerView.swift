@@ -52,6 +52,11 @@ struct AVIMAPlayerView: View {
     /// ZStack so it wins UIKit hit-testing over IMA's content (including during ads).
     private let onExpand: (() -> Void)?
 
+    /// Callback invoked when the close button in the controls overlay is tapped.
+    /// When non-nil, a close (X) button is rendered at the top-leading position
+    /// of the controls overlay. Used in fullscreen mode to dismiss without a nav bar.
+    private let onClose: (() -> Void)?
+
     /// When true, suppresses AVPlayerViewController rendering to avoid the
     /// two-AVPlayerViewController-one-AVPlayer display conflict that occurs when
     /// a fullscreen cover shares the same AVPlayer as this embedded player.
@@ -90,13 +95,14 @@ struct AVIMAPlayerView: View {
     /// - Parameter videoId: The Brightcove video ID
     /// - Parameter allowsFullscreen: Whether fullscreen mode is allowed (default: false)
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(videoId: String, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
+    init(videoId: String, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, onClose: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
         self.videoSource = .id(videoId)
         self.allowsFullscreen = allowsFullscreen
         self.showNavigationChrome = showNavigationChrome
         self.cleanupOnDisappear = cleanupOnDisappear
         self.suppressPlayerView = suppressPlayerView
         self.onExpand = onExpand
+        self.onClose = onClose
         _viewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerViewModel())
     }
 
@@ -110,13 +116,14 @@ struct AVIMAPlayerView: View {
     /// - Parameter video: The video to play
     /// - Parameter allowsFullscreen: Whether fullscreen mode is allowed (default: false)
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(video: AVIMAVideoItem, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
+    init(video: AVIMAVideoItem, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, onClose: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
         self.videoSource = .item(video)
         self.allowsFullscreen = allowsFullscreen
         self.showNavigationChrome = showNavigationChrome
         self.cleanupOnDisappear = cleanupOnDisappear
         self.suppressPlayerView = suppressPlayerView
         self.onExpand = onExpand
+        self.onClose = onClose
         _viewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerViewModel())
     }
 
@@ -367,43 +374,50 @@ struct AVIMAPlayerView: View {
                 .onTapGesture {
                     viewModel.toggleControls()
                 }
-                #if DEBUG
-                .debugBorder(.gray, label: "Color.clear (tap absorber)")
-                #endif
 
-            // Expand button BEFORE ad controls so controls get higher hit-test
-            // priority (SwiftUI checks last ZStack child first). The expand button
-            // is at top-leading, ad controls are at bottom — no visual overlap.
-            if let onExpand {
-                Button(action: {
-                    debugPrintWithTimestamp("🔴 EXPAND BUTTON ACTION fired from adPlaybackView")
-                    onExpand()
-                }) {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(8)
-                        .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+            // Top-leading buttons BEFORE ad controls so controls get higher hit-test
+            // priority (SwiftUI checks last ZStack child first). These buttons are
+            // at top-leading, ad controls are at bottom — no visual overlap.
+            // Visibility synced with controls (always visible during ads since
+            // hideControls() guards against .advertisement mode).
+            HStack(spacing: 8) {
+                if let onClose {
+                    Button(action: {
+                        onClose()
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
                 }
-                .buttonStyle(.plain)
-                .padding(10)
-                .accessibilityLabel("Expand to fullscreen")
-                #if DEBUG
-                .debugBorder(.red, label: "EXPAND btn")
-                #endif
+
+                if let onExpand {
+                    Button(action: {
+                        onExpand()
+                    }) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Expand to fullscreen")
+                }
             }
+            .padding(10)
+            .opacity(viewModel.showingControls ? 1 : 0)
+            .allowsHitTesting(viewModel.showingControls)
 
             // Ad controls — last in ZStack so they win hit-testing over expand button.
             // showingControls is always true during ad playback
             // (hideControls() guards against the .advertisement mode).
             adControlsOverlay
-                #if DEBUG
-                .debugBorder(.green, label: "adControlsOverlay")
-                #endif
         }
-        #if DEBUG
-        .debugBorder(.yellow, label: "adPlaybackView ZStack")
-        #endif
     }
 
     /// Custom controls for ad playback, constrained to the video aspect ratio.
@@ -437,30 +451,31 @@ struct AVIMAPlayerView: View {
                 Color.black.ignoresSafeArea()
             }
 
+            // Tap-to-toggle-controls overlay.
+            // Always active — tapping empty space shows or dismisses controls.
+            // Sits behind ControlsOverlay so buttons get hit-test priority;
+            // the gradient background has allowsHitTesting(false) so taps on
+            // empty areas fall through to this layer.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.toggleControls()
+                }
+
             // Custom controls overlay — expand button lives inside VideoPlayerControlsView
             // at the leading top position so it never overlaps trailing CC/Mute buttons.
+            // Last in ZStack so buttons win hit-testing over the tap overlay above.
             ControlsOverlay(aspectRatio: viewModel.videoAspectRatio) {
                 VideoPlayerControlsView(
                     configuration: .fullMainVideo,
                     delegate: viewModel,
-                    onExpandAction: onExpand
+                    onExpandAction: onExpand,
+                    onCloseAction: onClose
                 )
             }
             .opacity(viewModel.showingControls ? 1 : 0)
             .allowsHitTesting(viewModel.showingControls)
             .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
-
-            // Tap-to-show-controls overlay.
-            // UIHostingController is aware of SwiftUI's allowsHitTesting and returns nil
-            // from hitTest for allowsHitTesting(false) views, so AVPlayerViewController
-            // below this layer receives those touches. When controls are hidden this
-            // overlay is active and shows them on tap.
-            Color.clear
-                .contentShape(Rectangle())
-                .allowsHitTesting(!viewModel.showingControls)
-                .onTapGesture {
-                    viewModel.toggleControls()
-                }
         }
     }
 
@@ -554,10 +569,6 @@ private class AdContainerViewController<Content: View>: UIViewController {
     /// Current aspect ratio, stored for manual frame layout in viewDidLayoutSubviews.
     private var currentAspectRatio: Double = 16.0 / 9.0
 
-    #if DEBUG
-    private var hasLoggedSubviewHierarchy = false
-    #endif
-
     init(viewModel: AVIMAPlayerViewModel, content: Content) {
         self.viewModel = viewModel
         self.hostingController = UIHostingController(rootView: content)
@@ -645,25 +656,11 @@ private class AdContainerViewController<Content: View>: UIViewController {
     }
 
     func setAdContainerVisible(_ visible: Bool) {
+        let currentlyHidden = viewModel.imaContainerView.isHidden
+        let shouldHide = !visible
+        guard currentlyHidden != shouldHide else { return }
         debugPrintWithTimestamp("📺 Setting IMA container visible: \(visible)")
-        // hostingController.view stays on top (added last in viewDidLoad). The shared
-        // imaContainerView is behind it (insertSubview at: 0 in viewWillAppear).
-        // allowsHitTesting(false) SwiftUI areas let UIHostingController.hitTest return
-        // nil, falling through to imaContainerView for IMA touches.
-        viewModel.imaContainerView.isHidden = !visible
-        debugPrintWithTimestamp("   Container hidden: \(viewModel.imaContainerView.isHidden)")
-
-        #if DEBUG
-        // Re-log hierarchy when ad becomes visible — IMA may have injected views
-        if visible {
-            hasLoggedSubviewHierarchy = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self, !(self.hasLoggedSubviewHierarchy) else { return }
-                self.hasLoggedSubviewHierarchy = true
-                self.logViewHierarchy()
-            }
-        }
-        #endif
+        viewModel.imaContainerView.isHidden = shouldHide
     }
 
     override func viewDidLayoutSubviews() {
@@ -677,14 +674,6 @@ private class AdContainerViewController<Content: View>: UIViewController {
             container.setNeedsLayout()
             container.layoutIfNeeded()
         }
-
-        #if DEBUG
-        // Log the complete subview hierarchy once to detect IMA-injected views
-        if !hasLoggedSubviewHierarchy && view.subviews.count > 0 {
-            hasLoggedSubviewHierarchy = true
-            logViewHierarchy()
-        }
-        #endif
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
@@ -704,41 +693,6 @@ private class AdContainerViewController<Content: View>: UIViewController {
         hostingController.rootView = content
     }
 
-    #if DEBUG
-    /// Logs the complete UIKit subview hierarchy of this VC's view to detect IMA-injected views.
-    private func logViewHierarchy() {
-        debugPrintWithTimestamp("🔍 AdContainerVC.view subviews (\(view.subviews.count) total):")
-        for (i, subview) in view.subviews.enumerated() {
-            let isIMA = subview === viewModel.imaContainerView
-            let isHC = subview === hostingController.view
-            let label = isIMA ? " [imaContainer]" : isHC ? " [hostingController]" : " [UNKNOWN — IMA injected?]"
-            debugPrintWithTimestamp("   [\(i)] \(type(of: subview)) frame=\(subview.frame) userInteraction=\(subview.isUserInteractionEnabled)\(label)")
-
-            if let gestures = subview.gestureRecognizers, !gestures.isEmpty {
-                for g in gestures {
-                    debugPrintWithTimestamp("      gesture: \(type(of: g)) cancelsTouches=\(g.cancelsTouchesInView) delaysTouchesBegan=\(g.delaysTouchesBegan)")
-                }
-            }
-
-            // Also check subviews of each view (one level deep)
-            for (j, sub2) in subview.subviews.enumerated() {
-                debugPrintWithTimestamp("      [\(i).\(j)] \(type(of: sub2)) frame=\(sub2.frame) userInteraction=\(sub2.isUserInteractionEnabled)")
-                if let gestures = sub2.gestureRecognizers, !gestures.isEmpty {
-                    for g in gestures {
-                        debugPrintWithTimestamp("         gesture: \(type(of: g)) cancelsTouches=\(g.cancelsTouchesInView) delaysTouchesBegan=\(g.delaysTouchesBegan)")
-                    }
-                }
-            }
-        }
-
-        if let gestures = view.gestureRecognizers, !gestures.isEmpty {
-            debugPrintWithTimestamp("   ROOT VIEW gestures:")
-            for g in gestures {
-                debugPrintWithTimestamp("      \(type(of: g)) cancelsTouches=\(g.cancelsTouchesInView) delaysTouchesBegan=\(g.delaysTouchesBegan)")
-            }
-        }
-    }
-    #endif
 }
 
 // MARK: - Player View Representable
@@ -770,8 +724,8 @@ private struct PlayerViewRepresentable: UIViewControllerRepresentable {
         // Hide native controls - we use custom VideoPlayerControlsView
         controller.showsPlaybackControls = false
 
-        // Enable AirPlay and Picture-in-Picture
-        controller.allowsPictureInPicturePlayback = true
+        // Disable Picture-in-Picture to remove the system PiP button overlay
+        controller.allowsPictureInPicturePlayback = false
 
         // Disable fullscreen button if not allowed
         // Note: This doesn't actually hide the button, but we block it in the delegate
@@ -886,32 +840,6 @@ private struct PlayerViewRepresentable: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Debug Hit Area Borders
-
-#if DEBUG
-extension View {
-    /// Adds a colored debug border to visualize view frames and hit areas.
-    /// Use different colors per layer to identify which view receives touches.
-    func debugBorder(_ color: Color, label: String = "") -> some View {
-        self
-            .overlay(
-                Rectangle()
-                    .strokeBorder(color, lineWidth: 2)
-                    .allowsHitTesting(false)
-            )
-            .overlay(alignment: .topLeading) {
-                if !label.isEmpty {
-                    Text(label)
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(color)
-                        .padding(2)
-                        .background(.black.opacity(0.7))
-                        .allowsHitTesting(false)
-                }
-            }
-    }
-}
-#endif
 
 // MARK: - Preview
 

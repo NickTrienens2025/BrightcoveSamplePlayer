@@ -52,6 +52,9 @@ protocol VideoPlayerControlsDelegate: AnyObject {
 
     // Ad-specific
     var adProgress: AdProgressInfo? { get }
+
+    /// Normalized midroll cue point positions (0.0–1.0) for timeline markers
+    var midrollMarkerPositions: [Double] { get }
 }
 
 /// Ad progress information (independent of ViewModel implementation)
