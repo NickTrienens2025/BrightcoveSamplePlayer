@@ -615,11 +615,8 @@ private class AdContainerViewController<Content: View>: UIViewController {
             // This must happen BEFORE insertSubview — UIKit validates that any
             // child VC whose view is a descendant of the moved view has the
             // correct parent. Orphaned VCs (parent == nil) pass this check.
-            let orphanedChildren: [UIViewController]
             if let previousParentVC {
-                orphanedChildren = orphanIMAChildViewControllers(from: previousParentVC)
-            } else {
-                orphanedChildren = []
+                orphanIMAChildViewControllers(from: previousParentVC)
             }
 
             // Phase 2: Move the container view. Safe because IMA child VCs are parentless.
@@ -627,12 +624,9 @@ private class AdContainerViewController<Content: View>: UIViewController {
             view.insertSubview(container, at: 0)   // Behind hostingController.view
             view.setNeedsLayout()
 
-            // Phase 3: Adopt orphaned IMA child VCs into this VC.
-            // Now their views ARE inside self's hierarchy, so addChild succeeds.
-            for child in orphanedChildren {
-                self.addChild(child)
-                child.didMove(toParent: self)
-            }
+            // NOTE: Do NOT re-adopt orphaned IMA child VCs into self.
+            // IMA manages its own child VC hierarchy internally via setAdContainer.
+            // Manually calling addChild confuses IMA's rendering state.
 
             debugPrintWithTimestamp("   ✅ Reparenting complete — self.children: \(self.children.map { String(describing: type(of: $0)) })")
         }
@@ -658,11 +652,11 @@ private class AdContainerViewController<Content: View>: UIViewController {
         }
 
         guard !imaChildren.isEmpty else {
-            debugPrintWithTimestamp("   🔍 No IMA child VCs to transfer")
+            debugPrintWithTimestamp("🔍 No IMA child VCs to transfer")
             return []
         }
 
-        debugPrintWithTimestamp("   🔄 Orphaning \(imaChildren.count) IMA child VC(s): \(imaChildren.map { String(describing: type(of: $0)) })")
+        debugPrintWithTimestamp("🔄 Orphaning \(imaChildren.count) IMA child VC(s): \(imaChildren.map { String(describing: type(of: $0)) })")
 
         for child in imaChildren {
             child.willMove(toParent: nil)

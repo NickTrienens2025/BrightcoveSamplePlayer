@@ -42,13 +42,24 @@ struct ControlsOverlay<Content: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // Calculate video area dimensions
-            let videoWidth = geometry.size.width
-            let videoHeight = videoWidth / aspectRatio
+            // Aspect-fit: use the largest rect that fits inside the container
+            let containerWidth = geometry.size.width
+            let containerHeight = geometry.size.height
+
+            let widthBasedHeight = containerWidth / aspectRatio
+            let heightBasedWidth = containerHeight * aspectRatio
+
+            let videoWidth: CGFloat = widthBasedHeight <= containerHeight
+                ? containerWidth        // Width-constrained (letterbox)
+                : heightBasedWidth      // Height-constrained (pillarbox)
+
+            let videoHeight: CGFloat = widthBasedHeight <= containerHeight
+                ? widthBasedHeight
+                : containerHeight
 
             content()
                 .frame(width: videoWidth, height: videoHeight)
-                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                .position(x: containerWidth / 2, y: containerHeight / 2)
         }
     }
 }

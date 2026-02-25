@@ -60,29 +60,33 @@ struct VideoPlayerControlsView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Top bar
-            if configuration.layout.showTopBar {
-                topControlsBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-            }
+        GeometryReader { geometry in
+            let isCompact = geometry.size.height < 200
 
-            Spacer()
+            VStack(spacing: 0) {
+                // Top bar
+                if configuration.layout.showTopBar {
+                    topControlsBar
+                        .padding(.horizontal, 12)
+                        .padding(.top, isCompact ? 4 : 8)
+                }
 
-            // Center play/pause
-            if configuration.layout.showCenterButton,
-               let style = configuration.buttons.playPauseButton {
-                centerPlayPauseButton(style: style)
-            }
+                Spacer()
 
-            Spacer()
+                // Center transport: skip back / play-pause / skip forward
+                if configuration.layout.showCenterButton || configuration.buttons.skipBackward != nil || configuration.buttons.skipForward != nil,
+                   let style = configuration.buttons.playPauseButton {
+                    centerTransportControls(style: style, compact: isCompact)
+                }
 
-            // Bottom controls
-            if configuration.layout.showBottomBar {
-                bottomControlsBar
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                Spacer()
+
+                // Bottom controls (seek bar + time)
+                if configuration.layout.showBottomBar {
+                    bottomControlsBar
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, isCompact ? 4 : 12)
+                }
             }
         }
         .background(backgroundGradient.allowsHitTesting(false))
@@ -139,24 +143,64 @@ struct VideoPlayerControlsView: View {
         }
     }
 
-    // MARK: - Center Play/Pause
+    // MARK: - Center Transport Controls
 
+    /// Center row: skip backward / play-pause / skip forward
+    /// Uses clean borderless icons for a modern look (YouTube/Netflix style).
+    /// Scales down in compact mode (small embedded players).
     @ViewBuilder
-    private func centerPlayPauseButton(style: PlayPauseStyle) -> some View {
-        let size: CGFloat = {
+    private func centerTransportControls(style: PlayPauseStyle, compact: Bool) -> some View {
+        let playSize: CGFloat = {
             switch style {
-            case .large: return 60
-            case .medium: return 44
-            case .small: return 32
+            case .large: return compact ? 36 : 52
+            case .medium: return compact ? 30 : 44
+            case .small: return compact ? 22 : 30
             }
         }()
 
-        ControlButton(
-            systemImage: stateProvider.isPlaying ? "pause.fill" : "play.fill",
-            size: size,
-            accessibilityLabel: stateProvider.isPlaying ? "Pause" : "Play"
-        ) {
-            stateProvider.handleAction(.togglePlayPause)
+        let skipSize: CGFloat = compact ? 20 : 26
+        let spacing: CGFloat = compact ? 28 : 40
+
+        HStack(spacing: spacing) {
+            // Skip backward
+            if let skipDuration = configuration.buttons.skipBackward {
+                Button {
+                    stateProvider.handleAction(.skipBackward(skipDuration))
+                } label: {
+                    Image(systemName: "gobackward.\(Int(skipDuration))")
+                        .font(.system(size: skipSize, weight: .medium))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.5), radius: 3)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Skip back \(Int(skipDuration)) seconds")
+            }
+
+            // Play / pause
+            Button {
+                stateProvider.handleAction(.togglePlayPause)
+            } label: {
+                Image(systemName: stateProvider.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: playSize, weight: .medium))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.5), radius: 4)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(stateProvider.isPlaying ? "Pause" : "Play")
+
+            // Skip forward
+            if let skipDuration = configuration.buttons.skipForward {
+                Button {
+                    stateProvider.handleAction(.skipForward(skipDuration))
+                } label: {
+                    Image(systemName: "goforward.\(Int(skipDuration))")
+                        .font(.system(size: skipSize, weight: .medium))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.5), radius: 3)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Skip forward \(Int(skipDuration)) seconds")
+            }
         }
     }
 
@@ -164,53 +208,47 @@ struct VideoPlayerControlsView: View {
 
     @ViewBuilder
     private var bottomControlsBar: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             // Ad progress banner
             if configuration.progress.showAdProgress,
                let adProgress = stateProvider.adProgress {
                 adProgressBanner(adProgress)
             }
 
-            // Transport controls
-            HStack(spacing: 24) {
-                // Time labels
-                if configuration.layout.showTimeLabels {
-                    timeLabels
+            // Ad-specific bottom row (play/pause + skip ad)
+            if configuration.buttons.skipAd {
+                HStack(spacing: 16) {
+                    // Small play/pause for ads
+                    if let style = configuration.buttons.playPauseButton {
+                        Button {
+                            stateProvider.handleAction(.togglePlayPause)
+                        } label: {
+                            Image(systemName: stateProvider.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: style == .small ? 16 : 20))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(stateProvider.isPlaying ? "Pause" : "Play")
+                    }
+
                     Spacer()
-                }
 
-                // Skip backward
-                if let skipDuration = configuration.buttons.skipBackward {
-                    skipBackwardButton(duration: skipDuration)
-                }
-
-                // Play/pause (if not centered)
-                if configuration.layout.showCenterButton == false,
-                   let style = configuration.buttons.playPauseButton {
-                    centerPlayPauseButton(style: style)
-                }
-
-                // Skip forward
-                if let skipDuration = configuration.buttons.skipForward {
-                    skipForwardButton(duration: skipDuration)
-                }
-
-                // Skip ad button
-                if configuration.buttons.skipAd,
-                   stateProvider.canSkip {
-                    skipAdButton
-                }
-
-                if !configuration.layout.showTimeLabels {
-                    Spacer()
+                    if stateProvider.canSkip {
+                        skipAdButton
+                    }
                 }
             }
 
-            // Progress bar — at the very bottom, closest to the screen edge
+            // Seek bar — full width, above time row
             if configuration.progress.showSeekBar {
                 seekProgressBar
             } else if configuration.progress.showNonInteractiveProgress {
                 nonInteractiveProgressBar
+            }
+
+            // Time labels row — below seek bar
+            if configuration.layout.showTimeLabels {
+                timeRow
             }
         }
     }
@@ -283,26 +321,6 @@ struct VideoPlayerControlsView: View {
         }
     }
 
-    private func skipBackwardButton(duration: TimeInterval) -> some View {
-        ControlButton(
-            systemImage: "gobackward.\(Int(duration))",
-            size: 32,
-            accessibilityLabel: "Skip back \(Int(duration)) seconds"
-        ) {
-            stateProvider.handleAction(.skipBackward(duration))
-        }
-    }
-
-    private func skipForwardButton(duration: TimeInterval) -> some View {
-        ControlButton(
-            systemImage: "goforward.\(Int(duration))",
-            size: 32,
-            accessibilityLabel: "Skip forward \(Int(duration)) seconds"
-        ) {
-            stateProvider.handleAction(.skipForward(duration))
-        }
-    }
-
     private var skipAdButton: some View {
         Button {
             stateProvider.handleAction(.skipAd)
@@ -328,36 +346,35 @@ struct VideoPlayerControlsView: View {
 
     @ViewBuilder
     private var seekProgressBar: some View {
-        VStack(spacing: 4) {
-            ZStack {
-                // Interactive slider
-                Slider(
-                    value: Binding(
-                        get: { stateProvider.currentTime },
-                        set: { newValue in
-                            stateProvider.handleAction(.seek(to: newValue))
-                        }
-                    ),
-                    in: 0...max(stateProvider.duration, 1)
-                )
-                .tint(.white)
-                .disabled(!stateProvider.canSeek)
-
-                // Midroll marker dots overlaid on the slider track
-                if !stateProvider.midrollMarkerPositions.isEmpty {
-                    GeometryReader { geometry in
-                        ForEach(stateProvider.midrollMarkerPositions, id: \.self) { position in
-                            Circle()
-                                .fill(Color.yellow)
-                                .frame(width: 8, height: 8)
-                                .position(
-                                    x: geometry.size.width * position,
-                                    y: geometry.size.height / 2
-                                )
-                        }
-                    }
-                    .allowsHitTesting(false)
+        // Slider with midroll markers overlaid.
+        // Uses .overlay instead of ZStack+GeometryReader to avoid
+        // the greedy GeometryReader expanding and stealing Spacer space.
+        Slider(
+            value: Binding(
+                get: { stateProvider.currentTime },
+                set: { newValue in
+                    stateProvider.handleAction(.seek(to: newValue))
                 }
+            ),
+            in: 0...max(stateProvider.duration, 1)
+        )
+        .tint(.white)
+        .disabled(!stateProvider.canSeek)
+        .overlay {
+            // Midroll marker dots on the slider track
+            if !stateProvider.midrollMarkerPositions.isEmpty {
+                GeometryReader { geometry in
+                    ForEach(stateProvider.midrollMarkerPositions, id: \.self) { position in
+                        Circle()
+                            .fill(Color.yellow)
+                            .frame(width: 8, height: 8)
+                            .position(
+                                x: geometry.size.width * position,
+                                y: geometry.size.height / 2
+                            )
+                    }
+                }
+                .allowsHitTesting(false)
             }
         }
     }
@@ -383,20 +400,19 @@ struct VideoPlayerControlsView: View {
         .frame(height: 4)
     }
 
+    /// Time row below the seek bar: current time left, remaining/total right
     @ViewBuilder
-    private var timeLabels: some View {
-        HStack(spacing: 8) {
+    private var timeRow: some View {
+        HStack {
             Text(formatTime(stateProvider.currentTime))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.9))
 
-            Text("/")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.6))
+            Spacer()
 
             Text(formatTime(stateProvider.duration))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.white)
+                .font(.system(size: 13, weight: .medium).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.6))
         }
     }
 

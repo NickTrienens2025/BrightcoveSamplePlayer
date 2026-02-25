@@ -152,13 +152,13 @@ struct ControlsStyle: Equatable {
 // MARK: - Preset Configurations
 
 extension VideoPlayerControlsConfiguration {
-    /// Full controls for main video playback
+    /// Full controls for main video playback (YouTube/Netflix style)
     ///
-    /// Includes: CC, mute, play/pause, seek bar, time labels, skip forward/backward
+    /// Layout: Top bar (CC, mute) → Center transport (skip back, play/pause, skip forward) → Bottom (seek bar, time)
     static let fullMainVideo = VideoPlayerControlsConfiguration(
         layout: ControlLayout(
             showTopBar: true,
-            showCenterButton: false,  // Use bottom transport instead
+            showCenterButton: true,  // Center transport row with skip + play/pause
             showBottomBar: true,
             showTimeLabels: true
         ),
@@ -167,7 +167,7 @@ extension VideoPlayerControlsConfiguration {
             shareButton: nil,
             ccButton: .trailing,
             muteButton: .trailing,
-            playPauseButton: .medium,  // In transport row
+            playPauseButton: .large,  // Large center play/pause
             skipBackward: 10,
             skipForward: 10,
             skipAd: false
