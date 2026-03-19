@@ -174,6 +174,7 @@ struct VideoPlayerControlsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Skip back \(Int(skipDuration)) seconds")
+                .accessibilityIdentifier(AccessibilityID.Controls.skipBackwardButton)
             }
 
             // Play / pause
@@ -187,6 +188,7 @@ struct VideoPlayerControlsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(stateProvider.isPlaying ? "Pause" : "Play")
+            .accessibilityIdentifier(AccessibilityID.Controls.playPauseButton)
 
             // Skip forward
             if let skipDuration = configuration.buttons.skipForward {
@@ -200,6 +202,7 @@ struct VideoPlayerControlsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Skip forward \(Int(skipDuration)) seconds")
+                .accessibilityIdentifier(AccessibilityID.Controls.skipForwardButton)
             }
         }
     }
@@ -265,6 +268,7 @@ struct VideoPlayerControlsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Close")
+        .accessibilityIdentifier(AccessibilityID.Controls.closeButton)
     }
 
     private func expandButton(action: @escaping () -> Void) -> some View {
@@ -277,48 +281,69 @@ struct VideoPlayerControlsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Expand to fullscreen")
+        .accessibilityIdentifier(AccessibilityID.Controls.expandButton)
     }
 
     private var closeButton: some View {
-        ControlButton(
-            systemImage: "xmark",
-            size: 24,
-            accessibilityLabel: "Close"
-        ) {
+        Button {
             stateProvider.handleAction(.close)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(8)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
+        .accessibilityIdentifier(AccessibilityID.Controls.closeButton)
     }
 
     private var shareButton: some View {
-        ControlButton(
-            systemImage: "square.and.arrow.up",
-            size: 24,
-            accessibilityLabel: "Share"
-        ) {
+        Button {
             stateProvider.handleAction(.share)
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(8)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Share")
+        .accessibilityIdentifier(AccessibilityID.Controls.shareButton)
     }
 
     private var closedCaptionButton: some View {
-        ControlButton(
-            systemImage: stateProvider.closedCaptionsEnabled ?
-                "captions.bubble.fill" : "captions.bubble",
-            size: 24,
-            accessibilityLabel: "Closed Captions"
-        ) {
+        Button {
             stateProvider.handleAction(.toggleClosedCaptions)
+        } label: {
+            Image(systemName: stateProvider.closedCaptionsEnabled ?
+                "captions.bubble.fill" : "captions.bubble")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(8)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Closed Captions")
+        .accessibilityIdentifier(AccessibilityID.Controls.ccButton)
     }
 
     private var muteButton: some View {
-        ControlButton(
-            systemImage: stateProvider.isMuted ?
-                "speaker.slash.fill" : "speaker.wave.2.fill",
-            size: 24,
-            accessibilityLabel: stateProvider.isMuted ? "Unmute" : "Mute"
-        ) {
+        Button {
             stateProvider.handleAction(.toggleMute)
+        } label: {
+            Image(systemName: stateProvider.isMuted ?
+                "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(8)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(stateProvider.isMuted ? "Unmute" : "Mute")
+        .accessibilityIdentifier(AccessibilityID.Controls.muteButton)
     }
 
     private var skipAdButton: some View {
@@ -340,6 +365,7 @@ struct VideoPlayerControlsView: View {
             )
         }
         .accessibilityLabel("Skip Ad")
+        .accessibilityIdentifier(AccessibilityID.Controls.skipAdButton)
     }
 
     // MARK: - Progress Bars
@@ -360,6 +386,7 @@ struct VideoPlayerControlsView: View {
         )
         .tint(.white)
         .disabled(!stateProvider.canSeek)
+        .accessibilityIdentifier(AccessibilityID.Controls.seekBar)
         .overlay {
             // Midroll marker dots on the slider track
             if !stateProvider.midrollMarkerPositions.isEmpty {
@@ -414,6 +441,7 @@ struct VideoPlayerControlsView: View {
                 .font(.system(size: 13, weight: .medium).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.6))
         }
+        .accessibilityIdentifier(AccessibilityID.Controls.timeDisplay)
     }
 
     @ViewBuilder
@@ -431,6 +459,7 @@ struct VideoPlayerControlsView: View {
 
             Spacer()
         }
+        .accessibilityIdentifier(AccessibilityID.Controls.adProgressBanner)
     }
 
     // MARK: - Background

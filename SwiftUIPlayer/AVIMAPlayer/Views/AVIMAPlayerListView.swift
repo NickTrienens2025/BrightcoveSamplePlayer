@@ -47,6 +47,7 @@ struct AVIMAPlayerListView: View {
                 .navigationTitle("IMA Video Player")
                 .navigationBarTitleDisplayMode(.large)
         }
+        .accessibilityIdentifier(AccessibilityID.VideoList.container)
         .task {
             await viewModel.loadVideos()
         }
@@ -118,6 +119,7 @@ struct AVIMAPlayerListView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.black)
                 }
+                .accessibilityIdentifier(AccessibilityID.VideoList.embeddedSection)
             }
 
             // Full video list — each row navigates to the dedicated player screen.
@@ -128,6 +130,7 @@ struct AVIMAPlayerListView: View {
                     } label: {
                         VideoRowView(video: video)
                     }
+                    .accessibilityIdentifier(AccessibilityID.VideoList.videoRow(id: video.id))
                 }
             }
         }

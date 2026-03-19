@@ -7,7 +7,6 @@
 //
 
 import AVFoundation
-import Combine
 import Foundation
 import GoogleInteractiveMediaAds
 import UIKit
@@ -179,7 +178,12 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     @Published private(set) var currentAdProgress: AdProgress?
 
     /// Whether audio is muted
-    @Published var isMuted: Bool = false
+    @Published var isMuted: Bool = false {
+        didSet {
+            mainPlayer?.isMuted = isMuted
+            adsManager?.volume = isMuted ? 0 : 1
+        }
+    }
 
     /// Current playback error (nil when no error)
     @Published private(set) var playbackError: Error?
@@ -315,6 +319,10 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// View controller for ad presentation
     private weak var adViewController: UIViewController?
 
+    /// Continuation that `initializeIMAPlayer` awaits until `setAdContainer` is called.
+    /// Resolves the timing race between `.task { loadVideo() }` and `viewWillAppear`.
+    private var adContainerContinuation: CheckedContinuation<Void, Never>?
+
     /// Current player view controller for fullscreen control
     weak var currentPlayerViewController: AVPlayerViewController?
 
@@ -324,14 +332,20 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// Time observer for ad player with its owning player instance
     private var adTimeObserver: (observer: Any, player: AVPlayer)?
 
-    /// Combine cancellables
-    private var cancellables = Set<AnyCancellable>()
+    /// Task monitoring app lifecycle events (background/foreground transitions).
+    /// Cancelled in cleanup() to stop monitoring when the player is torn down.
+    private var lifecycleTask: Task<Void, Never>?
 
     /// Whether playback was active before backgrounding
     private var wasPlayingBeforeBackground = false
 
     /// Whether a midroll ad is currently being triggered (prevents re-entrance)
     private var isTriggeringMidroll = false
+
+    /// Whether the user is actively dragging the seek bar.
+    /// When true, the periodic time observer skips updating `currentTime`
+    /// so the slider doesn't snap back during a drag.
+    private var isSeeking = false
 
     /// The position to resume from after a midroll completes
     private var resumePositionAfterMidroll: TimeInterval?
@@ -352,13 +366,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        setupMuteObserver()
-        setupLifecycleObservers()
-    }
-
-    deinit {
-        // Cleanup is handled in View's onDisappear to avoid actor isolation issues
-        NotificationCenter.default.removeObserver(self)
+        startLifecycleMonitoring()
     }
 
     // MARK: - Public API (Called by View)
@@ -388,6 +396,10 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     func setAdContainer(containerView: UIView, viewController: UIViewController) {
         self.adContainerView = containerView
         self.adViewController = viewController
+
+        // Resume initializeIMAPlayer if it's waiting for the container.
+        adContainerContinuation?.resume()
+        adContainerContinuation = nil
     }
 
     /// Enters fullscreen mode for the current player.
@@ -556,15 +568,22 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
             resumePositionAfterMidroll = time
             let cuePosition = adCuePoints[cuePointIndex].position
             let cmTime = CMTime(seconds: cuePosition, preferredTimescale: 600)
-            mainPlayer?.seek(to: cmTime)
+            isSeeking = true
+            mainPlayer?.seek(to: cmTime) { [weak self] _ in
+                self?.isSeeking = false
+            }
             currentTime = cuePosition
             triggerMidrollAd(atIndex: cuePointIndex)
             return
         }
 
-        // Normal seek (backward or no cue point crossed)
+        // Normal seek — set isSeeking so the periodic time observer doesn't
+        // overwrite currentTime with the stale pre-seek position.
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-        mainPlayer?.seek(to: cmTime)
+        isSeeking = true
+        mainPlayer?.seek(to: cmTime) { [weak self] _ in
+            self?.isSeeking = false
+        }
         currentTime = time
     }
 
@@ -658,7 +677,6 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     func onDisappear() {
         pause()
         cleanup()
-        removeLifecycleObservers()
     }
 
     /// Clears the current video and resets state.
@@ -730,6 +748,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
             cuePoints.append(AdCuePoint(position: position, type: .midRoll))
         }
         self.adCuePoints = cuePoints
+        debugPrintWithTimestamp("📋 Ad cue points: \(cuePoints.map { "\($0.type)@\($0.position)s" })")
 
         // Initialize main video player
         try await initializeMainPlayer(with: video)
@@ -765,15 +784,24 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     /// Initializes the IMA ads loader and manager.
     private func initializeIMAPlayer(with video: AVIMAVideoItem) async throws {
-        guard let adTagURL = URL(string: video.adTagURL) else {
+        guard let adTagURL = URL(string: video.preRollAdTagURL) else {
             throw PlayerError.invalidAdTagURL
         }
 
-        // Ensure we have the required views for ad rendering
+        // Wait for the ad container if it hasn't been set yet.
+        // This resolves the timing race: .task { loadVideo() } can fire before
+        // AdContainerViewController.viewWillAppear calls setAdContainer().
+        if adContainerView == nil || adViewController == nil {
+            debugPrintWithTimestamp("⏳ Waiting for ad container to be set...")
+            await withCheckedContinuation { continuation in
+                self.adContainerContinuation = continuation
+            }
+            debugPrintWithTimestamp("✅ Ad container is now available")
+        }
+
         guard let containerView = adContainerView,
               let viewController = adViewController else {
             debugPrintWithTimestamp("⚠️ Ad container view or view controller not set. Skipping ads.")
-            // Skip to main video if no ad container available
             switchToMainVideoMode()
             return
         }
@@ -836,7 +864,8 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
             }
 
             guard self.playbackMode == .mainVideo,
-                  !self.isTriggeringMidroll else { return }
+                  !self.isTriggeringMidroll,
+                  !self.isSeeking else { return }
 
             self.currentTime = secs
 
@@ -894,87 +923,75 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         adTimeObserver = nil
     }
 
-    /// Sets up observer for mute state changes.
-    private func setupMuteObserver() {
-        $isMuted
-            .dropFirst()
-            .sink { [weak self] isMuted in
-                self?.mainPlayer?.isMuted = isMuted
-                self?.adsManager?.volume = isMuted ? 0 : 1
+    // MARK: - Lifecycle Monitoring
+
+    /// Starts a Task that monitors app lifecycle notifications via AsyncSequence.
+    ///
+    /// Handles:
+    /// - **Background**: Pauses playback, tracks state for resume
+    /// - **Foreground**: Resumes ad playback if an ad was interrupted (e.g., by
+    ///   tapping IMA's "Learn More" which opens Safari). Main video stays paused
+    ///   so audio doesn't surprise the user.
+    ///
+    /// Uses `NotificationCenter.notifications(named:)` instead of Combine `.sink`
+    /// or `@objc` selectors — Sendable-safe and cancelled automatically via the Task.
+    private func startLifecycleMonitoring() {
+        lifecycleTask = Task { [weak self] in
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { [weak self] in
+                    for await _ in NotificationCenter.default.notifications(named: UIApplication.didEnterBackgroundNotification) {
+                        guard let self, !Task.isCancelled else { return }
+                        await self.handleDidEnterBackground()
+                    }
+                }
+                group.addTask { [weak self] in
+                    for await _ in NotificationCenter.default.notifications(named: UIApplication.willEnterForegroundNotification) {
+                        guard let self, !Task.isCancelled else { return }
+                        await self.handleWillEnterForeground()
+                    }
+                }
             }
-            .store(in: &cancellables)
+        }
     }
 
-    /// Sets up observers for app lifecycle events.
-    ///
-    /// Monitors when the app enters background or returns to foreground
-    /// to properly pause and resume playback.
-    private func setupLifecycleObservers() {
-        // App going to background
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(appDidEnterBackground),
-            name: UIApplication.didEnterBackgroundNotification,
-            object: nil
-        )
-
-        // App returning to foreground
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(appWillEnterForeground),
-            name: UIApplication.willEnterForegroundNotification,
-            object: nil
-        )
-    }
-
-    /// Removes lifecycle observers.
-    private func removeLifecycleObservers() {
-        NotificationCenter.default.removeObserver(
-            self,
-            name: UIApplication.didEnterBackgroundNotification,
-            object: nil
-        )
-        NotificationCenter.default.removeObserver(
-            self,
-            name: UIApplication.willEnterForegroundNotification,
-            object: nil
-        )
-    }
-
-    /// Called when app enters background.
-    ///
-    /// Pauses playback to conserve battery and respect system resources.
-    /// Tracks whether content was playing to optionally resume on return.
-    @objc
-    private func appDidEnterBackground() {
-        // Track if we were playing before backgrounding
+    /// Pauses playback and records state so we can resume correctly on return.
+    private func handleDidEnterBackground() {
         wasPlayingBeforeBackground = isPlaying
+        debugPrintWithTimestamp("📱 Background — wasPlaying: \(wasPlayingBeforeBackground), mode: \(playbackMode)")
 
-        // Always pause when entering background
         if isPlaying {
             pause()
         }
     }
 
-    /// Called when app returns to foreground.
+    /// Resumes playback when returning from background.
     ///
-    /// Currently leaves playback paused - user must manually resume.
-    /// This provides better user experience as auto-resume can be jarring.
-    ///
-    /// **Future Enhancement:**
-    /// Could add a setting to optionally auto-resume:
-    /// ```
-    /// if wasPlayingBeforeBackground && userPreferences.autoResume {
-    ///     play()
-    /// }
-    /// ```
-    @objc
-    private func appWillEnterForeground() {
-        // Currently intentionally leaving paused
-        // User can manually resume playback if desired
-        // This prevents unexpected audio/video when returning to app
+    /// - **Ads**: Always resume — the user left via "Learn More" or app switch
+    ///   and IMA expects continuous playback. A paused ad with no visible controls
+    ///   is a dead-end UX.
+    /// - **Main video**: Stay paused — unexpected audio on foreground is jarring.
+    ///   The user can tap play to continue.
+    private func handleWillEnterForeground() {
+        debugPrintWithTimestamp("📱 Foreground — wasPlaying: \(wasPlayingBeforeBackground), mode: \(playbackMode)")
 
-        // Reset tracking flag
+        if wasPlayingBeforeBackground {
+            switch playbackMode {
+            case .advertisement:
+                // Resume ad playback — IMA ads should continue uninterrupted.
+                // The user left via "Learn More" or Control Center; keeping the ad
+                // paused with no way to see controls is a dead-end.
+                play()
+                debugPrintWithTimestamp("   ▶️ Ad resumed automatically")
+
+            case .mainVideo:
+                // Stay paused — user can tap play when ready.
+                debugPrintWithTimestamp("   ⏸️ Main video stays paused")
+
+            case .idle:
+                break
+            }
+        }
+
         wasPlayingBeforeBackground = false
     }
 
@@ -994,11 +1011,17 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         mainPlaybackController?.pause()
         mainPlayer?.pause()
 
+        // Unhide the IMA container immediately — don't wait for SwiftUI's
+        // rendering pass. After preroll the container was hidden; IMA's
+        // manager.start() renders into it synchronously, so it must be
+        // visible before playbackMode triggers a SwiftUI update.
+        imaContainerView.isHidden = false
+
         // Activate ad mode
         playbackMode = .advertisement
         adState = .playing
 
-        debugPrintWithTimestamp("   ✅ Ad mode active")
+        debugPrintWithTimestamp("   ✅ Ad mode active, imaContainer visible")
     }
 
     /// Switches playback mode back to main video and starts playback.
@@ -1112,7 +1135,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         // Request new ad
         guard let containerView = adContainerView,
               let viewController = adViewController else {
-            debugPrintWithTimestamp("⚠️ No ad container for midroll, resuming main video")
+            debugPrintWithTimestamp("⚠️ No ad container for midroll — containerView=\(adContainerView != nil), viewController=\(adViewController != nil), resuming main video")
             resumeAfterMidroll()
             return
         }
@@ -1129,7 +1152,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
         // Append a unique correlator so IMA treats this as a fresh ad request
         // (the default ad tag ends with &correlator= which is empty)
-        let adTagWithCorrelator = video.adTagURL + "\(Int(Date().timeIntervalSince1970))"
+        let adTagWithCorrelator = video.midRollAdTagURL + "\(Int(Date().timeIntervalSince1970))"
 
         let request = IMAAdsRequest(
             adTagUrl: adTagWithCorrelator,
@@ -1141,7 +1164,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         // Ensure loader delegate is still set (it should be, but safety check)
         adsLoader?.delegate = self
 
-        debugPrintWithTimestamp("📺 Requesting midroll ad — adsLoader nil? \(adsLoader == nil)")
+        debugPrintWithTimestamp("📺 Requesting midroll ad — adsLoader nil? \(adsLoader == nil), adTag: \(adTagWithCorrelator)")
         adsLoader?.requestAds(with: request)
 
         // If adsLoader is nil, we can't request ads — fall back to resume
@@ -1198,6 +1221,14 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     ///
     /// Should be called from View's onDisappear.
     func cleanup() {
+        // Resume any pending ad container continuation to avoid leaked continuation.
+        adContainerContinuation?.resume()
+        adContainerContinuation = nil
+
+        // Stop lifecycle monitoring
+        lifecycleTask?.cancel()
+        lifecycleTask = nil
+
         // Remove time observers safely from their owning player instances
         removeMainTimeObserver()
         removeAdTimeObserver()
@@ -1331,7 +1362,7 @@ extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
     func adsLoader(_ loader: IMAAdsLoader, failedWith adErrorData: IMAAdLoadingErrorData) {
         let errorMessage = adErrorData.adError.message ?? "Unknown ad error"
         debugPrintWithTimestamp("❌ Ad loading failed: \(errorMessage)")
-        debugPrintWithTimestamp("   Error code: \(adErrorData.adError.code)")
+        debugPrintWithTimestamp("   Error code: \(adErrorData.adError.code), session: \(isMidrollAdSession ? "midroll" : "preroll")")
 
         adState = .error(errorMessage)
 
@@ -1387,19 +1418,25 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
         case .ALL_ADS_COMPLETED:
             debugPrintWithTimestamp("   All ads completed (\(isMidrollAdSession ? "midroll" : "pre-roll"))")
             currentAd = nil
-            if isMidrollAdSession {
-                resumeAfterMidroll()
-            } else {
-                switchToMainVideoMode()
+            // adsManagerDidRequestContentResume typically fires before this event
+            // and already handles the mode switch. Only act if still in ad mode.
+            if playbackMode == .advertisement {
+                if isMidrollAdSession {
+                    resumeAfterMidroll()
+                } else {
+                    switchToMainVideoMode()
+                }
             }
 
         case .SKIPPED:
             debugPrintWithTimestamp("   Ad skipped (\(isMidrollAdSession ? "midroll" : "pre-roll"))")
             currentAd = nil
-            if isMidrollAdSession {
-                resumeAfterMidroll()
-            } else {
-                switchToMainVideoMode()
+            if playbackMode == .advertisement {
+                if isMidrollAdSession {
+                    resumeAfterMidroll()
+                } else {
+                    switchToMainVideoMode()
+                }
             }
 
         default:

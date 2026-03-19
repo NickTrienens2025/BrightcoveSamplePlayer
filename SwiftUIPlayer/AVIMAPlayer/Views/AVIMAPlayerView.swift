@@ -177,6 +177,7 @@ struct AVIMAPlayerView: View {
                 content
             }
         }
+        .accessibilityIdentifier(AccessibilityID.Player.container)
         .task {
             await loadVideoFromSource()
         }
@@ -227,6 +228,7 @@ struct AVIMAPlayerView: View {
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.8))
         }
+        .accessibilityIdentifier(AccessibilityID.Player.loadingIndicator)
     }
 
     // MARK: - Error View
@@ -270,6 +272,7 @@ struct AVIMAPlayerView: View {
             }
         }
         .padding()
+        .accessibilityIdentifier(AccessibilityID.Player.errorView)
     }
 
     // MARK: - Player View
@@ -348,87 +351,54 @@ struct AVIMAPlayerView: View {
 
     /// Ad playback view — IMA renders in imaContainerView (behind hostingController.view).
     ///
-    /// The transparent base passes touches through to IMA: UIHostingController's
-    /// hitTest returns nil for allowsHitTesting(false) areas, so UIKit falls back
-    /// to imaContainerView. Controls sit on top with allowsHitTesting(true).
-    ///
-    /// **Expand button placement:**
-    /// The Button is placed directly in the ZStack (no VStack+Spacer wrapper).
-    /// A plain Button's UIKit frame is exactly its visual size (~49×49 pt), so
-    /// UIKit's hitTest returns nil for touches outside it and falls through to
-    /// adControlsOverlay. A VStack+Spacer wrapper would make the entire VStack
-    /// frame the UIKit hit target, routing all touches to the Button.
+    /// Only Buttons capture touches; everything else (Spacer, Color.clear) passes
+    /// through so IMA click-throughs reach imaContainerView via UIHostingController's
+    /// SwiftUI-aware hitTest.
     @ViewBuilder
     private var adPlaybackView: some View {
-        ZStack(alignment: .topLeading) {
-            // Touch-absorbing base layer.
-            //
-            // SwiftUI ZStack hit-testing quirk: when no child in the ZStack claims
-            // a touch, SwiftUI can route it to the ONLY interactive child (the expand
-            // Button) regardless of whether the touch is within the Button's visual
-            // frame. This Color.clear with .contentShape + .onTapGesture ensures the
-            // base layer claims all uncaught taps, preventing them from reaching the
-            // expand button. The tap toggles controls as a useful fallback action.
+        ZStack {
+            // Transparent base — passes all touches through to IMA.
             Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    viewModel.toggleControls()
-                }
+                .allowsHitTesting(false)
 
-            // Top-leading buttons BEFORE ad controls so controls get higher hit-test
-            // priority (SwiftUI checks last ZStack child first). These buttons are
-            // at top-leading, ad controls are at bottom — no visual overlap.
-            // Visibility synced with controls (always visible during ads since
-            // hideControls() guards against .advertisement mode).
-            HStack(spacing: 8) {
-                if let onClose {
-                    Button(action: {
-                        onClose()
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close")
-                }
+            // Controls constrained to the video aspect ratio area.
+            ControlsOverlay(aspectRatio: viewModel.videoAspectRatio) {
+                ZStack {
+                    // Top bar: close (leading) and expand (trailing) buttons.
+                    VStack {
+                        HStack {
+                            if let onClose {
+                                ControlButton(
+                                    systemImage: "xmark",
+                                    size: 36,
+                                    accessibilityLabel: "Close",
+                                    identifier: AccessibilityID.Controls.closeButton,
+                                    action: onClose
+                                )
+                            } else if let onExpand {
+                                ControlButton(
+                                    systemImage: "arrow.up.left.and.arrow.down.right",
+                                    size: 36,
+                                    accessibilityLabel: "Fullscreen",
+                                    identifier: AccessibilityID.Controls.expandButton,
+                                    action: onExpand
+                                )
+                            }
 
-                if let onExpand {
-                    Button(action: {
-                        onExpand()
-                    }) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(8)
-                            .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                            Spacer()
+                        }
+                        .padding(10)
+
+                        Spacer()
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Expand to fullscreen")
+
+                    // Bottom-right ad controls (play/pause, skip).
+                    AVIMAAdControlsView(viewModel: viewModel)
                 }
             }
-            .padding(10)
-            .opacity(viewModel.showingControls ? 1 : 0)
-            .allowsHitTesting(viewModel.showingControls)
-
-            // Ad controls — last in ZStack so they win hit-testing over expand button.
-            // showingControls is always true during ad playback
-            // (hideControls() guards against the .advertisement mode).
-            adControlsOverlay
+            .accessibilityIdentifier(AccessibilityID.Controls.overlay)
         }
-    }
-
-    /// Custom controls for ad playback, constrained to the video aspect ratio.
-    @ViewBuilder
-    private var adControlsOverlay: some View {
-        ControlsOverlay(aspectRatio: viewModel.videoAspectRatio) {
-            AVIMAAdControlsView(viewModel: viewModel, showMute: false)
-        }
-        .opacity(viewModel.showingControls ? 1 : 0)
-        .allowsHitTesting(viewModel.showingControls)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
+        .accessibilityIdentifier(AccessibilityID.Player.adPlayback)
     }
 
     /// Main video player view with native controls
@@ -447,6 +417,7 @@ struct AVIMAPlayerView: View {
                     isAdPlayer: false,
                     allowsFullscreen: allowsFullscreen
                 )
+                .accessibilityIdentifier(AccessibilityID.Player.videoSurface)
             } else {
                 Color.black.ignoresSafeArea()
             }
@@ -474,9 +445,11 @@ struct AVIMAPlayerView: View {
                 )
             }
             .opacity(viewModel.showingControls ? 1 : 0)
+            .accessibilityIdentifier(AccessibilityID.Controls.overlay)
             .allowsHitTesting(viewModel.showingControls)
             .animation(.easeInOut(duration: 0.2), value: viewModel.showingControls)
         }
+        .accessibilityIdentifier(AccessibilityID.Player.mainVideoPlayback)
     }
 
     /// Error state view
@@ -510,6 +483,7 @@ struct AVIMAPlayerView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(.black.opacity(0.7))
         )
+        .accessibilityIdentifier(AccessibilityID.Player.bufferingOverlay)
     }
 
     // MARK: - Helper Methods
@@ -577,6 +551,53 @@ private class AdContainerViewController<Content: View>: UIViewController {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    // MARK: - Custom Root View for Hit-Testing
+
+    /// Custom root view that routes touches between our SwiftUI overlay buttons
+    /// and IMA's ad elements ("Learn More", click-through overlay).
+    ///
+    /// **Problem:** The hosting view (SwiftUI) sits on top of `imaContainerView`
+    /// (IMA ad content). We need our overlay buttons (expand, close, play/pause,
+    /// skip) to be tappable, while also letting taps on empty areas pass through
+    /// to IMA elements underneath.
+    ///
+    /// **Fix:** Check the hosting view first. `_UIHostingView.hitTest` is
+    /// SwiftUI-aware — it returns non-nil only for interactive elements (Button,
+    /// gesture recognizers) and nil for non-interactive areas (Spacer, views with
+    /// `allowsHitTesting(false)`). If the hosting view finds an interactive
+    /// element, use it (our buttons win). Otherwise, check IMA for its elements.
+    private class AdContainerRootView: UIView {
+        weak var hostingView: UIView?
+        weak var imaContainerView: UIView?
+
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+            // Priority 1: SwiftUI overlay buttons (expand, close, play/pause, skip).
+            if let hostingView = hostingView {
+                let hostingPoint = convert(point, to: hostingView)
+                if let hostingHit = hostingView.hitTest(hostingPoint, with: event) {
+                    return hostingHit
+                }
+            }
+
+            // Priority 2: IMA ad elements ("Learn More", click-through overlay).
+            // Only reached when the hosting view has no interactive element at this point.
+            if let imaContainer = imaContainerView, !imaContainer.isHidden {
+                let imaPoint = convert(point, to: imaContainer)
+                if let imaHit = imaContainer.hitTest(imaPoint, with: event),
+                   imaHit !== imaContainer {
+                    return imaHit
+                }
+            }
+
+            // Nothing interactive — pass through entirely.
+            return nil
+        }
+    }
+
+    override func loadView() {
+        view = AdContainerRootView()
     }
 
     // MARK: - Lifecycle
@@ -689,6 +710,13 @@ private class AdContainerViewController<Content: View>: UIViewController {
         hostingController.view.backgroundColor = .clear  // Transparent so IMA shows through
         hostingController.view.isOpaque = false
         hostingController.didMove(toParent: self)
+
+        // Wire up custom hit-testing references so IMA elements (e.g., "Learn More")
+        // can receive touches that pass through the hosting view.
+        if let rootView = view as? AdContainerRootView {
+            rootView.hostingView = hostingController.view
+            rootView.imaContainerView = viewModel.imaContainerView
+        }
     }
 
     // MARK: - IMA Container Layout

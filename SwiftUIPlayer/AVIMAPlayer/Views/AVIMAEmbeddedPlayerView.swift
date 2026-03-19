@@ -56,6 +56,7 @@ struct AVIMAEmbeddedPlayerView: View {
         )
         .aspectRatio(video.aspectRatio, contentMode: .fit)
         .clipped()
+        .accessibilityIdentifier(AccessibilityID.Player.embedded)
         .fullScreenCover(isPresented: $isFullscreen) {
             fullscreenPlayer
         }
@@ -86,6 +87,7 @@ struct AVIMAEmbeddedPlayerView: View {
             },
             viewModel: viewModel
         )
+        .accessibilityIdentifier(AccessibilityID.Player.fullscreen)
         .background(Color.black.ignoresSafeArea())
         .onAppear { viewModel.showControls() }
         .preferredColorScheme(.dark)

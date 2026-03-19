@@ -34,6 +34,7 @@ struct ControlButton: View {
     let color: Color
     let showBackdrop: Bool
     let accessibilityLabel: String
+    let identifier: String?
     let action: () -> Void
 
     // MARK: - Initialization
@@ -44,6 +45,7 @@ struct ControlButton: View {
         color: Color = .white,
         showBackdrop: Bool = true,
         accessibilityLabel: String,
+        identifier: String? = nil,
         action: @escaping () -> Void
     ) {
         self.systemImage = systemImage
@@ -51,12 +53,18 @@ struct ControlButton: View {
         self.color = color
         self.showBackdrop = showBackdrop
         self.accessibilityLabel = accessibilityLabel
+        self.identifier = identifier
         self.action = action
     }
 
     // MARK: - Body
 
     var body: some View {
+        button
+            .accessibilityIdentifier(identifier ?? "")
+    }
+
+    private var button: some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: size * 0.5))

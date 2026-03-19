@@ -48,13 +48,15 @@ struct AdCuePoint: Identifiable, Equatable {
 /// - `unviewed_position_start=1` ensures the ad plays at the beginning
 /// - `sample_ct=linear` specifies a linear (non-skippable by default) ad
 ///
-/// This is a Google IMA sample ad tag. In production, replace with your actual
-/// ad server URL from your ad network (e.g., Google Ad Manager, SpotX, etc.).
+/// Google IMA sample VAST ad tags (from Brightcove ios-player-samples).
 ///
-/// **Example production ad tags:**
-/// - Google Ad Manager: `https://pubads.g.doubleclick.net/gampad/ads?iu=/YOUR_NETWORK_CODE/...`
-/// - Custom VAST: `https://your-ad-server.com/vast?position=preroll`
-let kDefaultIMAAdTagURL = "https://pubads.g.doubleclick.net/gampad/ads?iu=/21775744923/external/single_ad_samples&sz=640x480&cust_params=sample_ct%3Dlinear&ciu_szs=300x250%2C728x90&gdfp_req=1&output=vast&unviewed_position_start=1&env=vp&impl=s&correlator="
+/// Separate tags for preroll and midroll so each ad break uses a distinct
+/// ad creative. In production, replace with your actual ad server URLs.
+///
+/// See: https://developers.google.com/interactive-media-ads/docs/sdks/html5/client-side/tags
+let kPreRollAdTagURL = "https://pubads.g.doubleclick.net/gampad/ads?sz=640x480&iu=/124319096/external/single_ad_samples&ciu_szs=300x250&impl=s&gdfp_req=1&env=vp&output=vast&unviewed_position_start=1&cust_params=deployment%3Ddevsite%26sample_ct%3Dlinear&correlator="
+
+let kMidRollAdTagURL = "https://pubads.g.doubleclick.net/gampad/ads?iu=/124319096/external/omid_google_samples&env=vp&gdfp_req=1&output=vast&sz=640x480&description_url=http%3A%2F%2Ftest_site.com%2Fhomepage&tfcd=0&npa=0&vpmute=0&vpa=0&vad_format=linear&url=http%3A%2F%2Ftest_site.com&vpos=preroll&unviewed_position_start=1&correlator="
 
 /// Represents a video item with IMA (Interactive Media Ads) configuration.
 ///
@@ -82,8 +84,11 @@ struct AVIMAVideoItem: Identifiable, Equatable {
     /// Duration of the video in seconds
     let duration: TimeInterval?
 
-    /// IMA ad tag URL for ad serving
-    let adTagURL: String
+    /// IMA ad tag URL for preroll ads
+    let preRollAdTagURL: String
+
+    /// IMA ad tag URL for midroll ads
+    let midRollAdTagURL: String
 
     /// The underlying Brightcove video object
     let video: BCOVVideo
@@ -104,7 +109,8 @@ struct AVIMAVideoItem: Identifiable, Equatable {
     ///   - description: Video description
     ///   - thumbnailURL: Optional thumbnail URL string
     ///   - duration: Optional video duration in seconds
-    ///   - adTagURL: IMA ad tag URL for ad insertion (defaults to kDefaultIMAAdTagURL)
+    ///   - preRollAdTagURL: IMA ad tag URL for preroll ads
+    ///   - midRollAdTagURL: IMA ad tag URL for midroll ads
     ///   - aspectRatio: Video aspect ratio (width/height), defaults to 16:9
     ///   - midRollPositions: Midroll ad positions in seconds (defaults to empty)
     ///   - video: Brightcove video object
@@ -114,7 +120,8 @@ struct AVIMAVideoItem: Identifiable, Equatable {
         description: String = "",
         thumbnailURL: String? = nil,
         duration: TimeInterval? = nil,
-        adTagURL: String = kDefaultIMAAdTagURL,
+        preRollAdTagURL: String = kPreRollAdTagURL,
+        midRollAdTagURL: String = kMidRollAdTagURL,
         aspectRatio: Double = 16.0/9.0,
         midRollPositions: [TimeInterval] = [],
         video: BCOVVideo
@@ -124,7 +131,8 @@ struct AVIMAVideoItem: Identifiable, Equatable {
         self.description = description
         self.thumbnailURL = thumbnailURL
         self.duration = duration
-        self.adTagURL = adTagURL
+        self.preRollAdTagURL = preRollAdTagURL
+        self.midRollAdTagURL = midRollAdTagURL
         self.aspectRatio = aspectRatio
         self.midRollPositions = midRollPositions
         self.video = video
@@ -189,7 +197,8 @@ struct AVIMAVideoItem: Identifiable, Equatable {
             description: description,
             thumbnailURL: thumbnailURL,
             duration: duration,
-            adTagURL: kDefaultIMAAdTagURL,
+            preRollAdTagURL: kPreRollAdTagURL,
+            midRollAdTagURL: kMidRollAdTagURL,
             aspectRatio: aspectRatio,
             midRollPositions: midRollPositions,
             video: videoWithAds
