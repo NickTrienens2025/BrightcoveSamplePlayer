@@ -38,10 +38,10 @@ struct ContentView: View {
                 }
                 .tag(Tab.imaVideos)
         }
-        .onChange(of: router.pendingCommand) { _, command in
+        .onChange(of: router.pendingCommand, perform: { command in
             guard let command else { return }
             handleCommand(command)
-        }
+        })
     }
 
     private func handleCommand(_ command: DeepLinkCommand) {

@@ -22,7 +22,7 @@ final class PlayerModel: NSObject, ObservableObject {
     weak var playerViewController: BCOVPUIPlayerViewController?
 
     /// Reference to the active AVPlayer for seeking.
-    private(set) var currentPlayer: AVPlayer?
+    var currentPlayer: AVPlayer?
 
     fileprivate(set) lazy var avpvc: AVPlayerViewController = {
         let avpvc = AVPlayerViewController()
@@ -117,11 +117,11 @@ extension PlayerModel: BCOVPlaybackControllerDelegate {
 extension PlayerModel {
 
     func enterFullscreen() {
-        playerViewController?.playerView?.screenMode = .full
+        playerViewController?.playerView?.performScreenTransition(with: .full)
     }
 
     func exitFullscreen() {
-        playerViewController?.playerView?.screenMode = .normal
+        playerViewController?.playerView?.performScreenTransition(with: .normal)
     }
 
     func seek(to seconds: TimeInterval) {

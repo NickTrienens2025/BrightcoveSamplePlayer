@@ -176,6 +176,9 @@ extension BCOVPUIIMAPlayerViewController: BCOVPlaybackControllerDelegate {
 
     func playbackController(_ controller: BCOVPlaybackController!,
                             didAdvanceTo session: BCOVPlaybackSession!) {
+        // Store player reference for deep link seek
+        playerModel?.currentPlayer = session?.player
+
         debugPrintWithTimestamp("📹 BCOVPUIIMAPlayerViewController - Advanced to new session")
         debugPrintWithTimestamp("   Session: \(String(describing: session))")
         debugPrintWithTimestamp("   Video: \(String(describing: session?.video))")
@@ -346,6 +349,9 @@ struct BCOVAdsPlayerViewControllerRepresentable: UIViewControllerRepresentable {
 
         // Set video using the new method - this will load it in viewDidLoad
         playerViewController.setVideo(videoWithAds)
+
+        // Store reference for deep link actions (fullscreen, seek)
+        playerModel.playerViewController = playerViewController
 
         return playerViewController
     }

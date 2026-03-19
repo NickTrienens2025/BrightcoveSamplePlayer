@@ -97,20 +97,20 @@ struct VideoListView: View {
                 .toolbar(playerModel.fullscreenEnabled ? .hidden : .visible, for: .navigationBar)
             }
         }
-        .onChange(of: router.pendingCommand) { _, command in
+        .onChange(of: router.pendingCommand, perform: { command in
             guard case .navigateToVideo(let videoIndex, let type) = command else { return }
             controlType = type
             if videoIndex < playlistModel.videoListItems.count {
                 navigationPath.append(playlistModel.videoListItems[videoIndex])
                 router.pendingCommand = nil
             }
-        }
-        .onChange(of: playlistModel.videoListItems) { _, items in
+        })
+        .onChange(of: playlistModel.videoListItems, perform: { items in
             guard case .navigateToVideo(let videoIndex, _) = router.pendingCommand,
                   videoIndex < items.count else { return }
             navigationPath.append(items[videoIndex])
             router.pendingCommand = nil
-        }
+        })
     }
 
 }
