@@ -18,6 +18,12 @@ final class PlayerModel: NSObject, ObservableObject {
     @Published
     var pictureInPictureEnabled = false
 
+    /// Reference to the active BCOVPUIPlayerViewController for fullscreen control.
+    weak var playerViewController: BCOVPUIPlayerViewController?
+
+    /// Reference to the active AVPlayer for seeking.
+    private(set) var currentPlayer: AVPlayer?
+
     fileprivate(set) lazy var avpvc: AVPlayerViewController = {
         let avpvc = AVPlayerViewController()
         avpvc.delegate = self
@@ -80,6 +86,8 @@ extension PlayerModel: BCOVPlaybackControllerDelegate {
 
     func playbackController(_ controller: BCOVPlaybackController!,
                             didAdvanceTo session: BCOVPlaybackSession!) {
+        currentPlayer = session?.player
+
         if let player = session?.player,
            let options = controller.options,
            let useNative = options[kBCOVAVPlayerViewControllerCompatibilityKey] as? Bool,
@@ -101,6 +109,25 @@ extension PlayerModel: BCOVPlaybackControllerDelegate {
         }
     }
 
+}
+
+
+// MARK: - Deep Link Actions
+
+extension PlayerModel {
+
+    func enterFullscreen() {
+        playerViewController?.playerView?.screenMode = .full
+    }
+
+    func exitFullscreen() {
+        playerViewController?.playerView?.screenMode = .normal
+    }
+
+    func seek(to seconds: TimeInterval) {
+        let cmTime = CMTime(seconds: seconds, preferredTimescale: 600)
+        currentPlayer?.seek(to: cmTime)
+    }
 }
 
 

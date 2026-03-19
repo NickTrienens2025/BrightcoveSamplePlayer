@@ -52,6 +52,7 @@ struct BCOVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         
         playbackController.options = [kBCOVAVPlayerViewControllerCompatibilityKey: false]
         playerViewController.delegate = playerModel
+        playerModel.playerViewController = playerViewController
         return playerViewController
     }
 
