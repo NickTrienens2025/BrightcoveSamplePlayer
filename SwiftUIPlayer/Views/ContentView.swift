@@ -16,6 +16,9 @@ struct ContentView: View {
     @StateObject
     fileprivate var playerModel = PlayerModel()
 
+    @EnvironmentObject
+    var router: DeepLinkRouter
+
     enum Tab {
         case videos
         case imaVideos
@@ -35,6 +38,24 @@ struct ContentView: View {
                 }
                 .tag(Tab.imaVideos)
         }
+        .onChange(of: router.pendingCommand) { _, command in
+            guard let command else { return }
+            handleCommand(command)
+        }
+    }
+
+    private func handleCommand(_ command: DeepLinkCommand) {
+        switch command {
+        case .navigateToVideo:
+            selection = .videos
+            // VideoListView handles the rest
+        case .enterFullscreen:
+            playerModel.enterFullscreen()
+            router.pendingCommand = nil
+        case .seek(let time):
+            playerModel.seek(to: time)
+            router.pendingCommand = nil
+        }
     }
 }
 
@@ -45,6 +66,7 @@ struct ContentView: View {
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
+            .environmentObject(DeepLinkRouter())
     }
 }
 #endif

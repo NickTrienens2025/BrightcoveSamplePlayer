@@ -50,14 +50,17 @@ struct VideoListView: View {
     @ObservedObject
     var playerModel: PlayerModel
 
+    @EnvironmentObject
+    var router: DeepLinkRouter
+
     @State
     fileprivate var controlType: ControlType = .bcov
 
     @State
-    fileprivate var isShowingDetailView = false
+    fileprivate var navigationPath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             VStack {
                 VStack(alignment: .leading) {
                     Text("Control Type")
@@ -74,17 +77,7 @@ struct VideoListView: View {
                 .padding()
 
                 List(playlistModel.videoListItems) { listItem in
-                    NavigationLink {
-                        VideoDetailView(playerModel: playerModel,
-                                        videoItem: listItem,
-                                        controlType: controlType)
-                        .navigationTitle(listItem.name)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .navigationBarBackButtonHidden(true)
-                        .statusBarHidden(playerModel.fullscreenEnabled)
-                        .toolbar(playerModel.fullscreenEnabled ? .hidden : .visible, for: .tabBar)
-                        .toolbar(playerModel.fullscreenEnabled ? .hidden : .visible, for: .navigationBar)
-                    } label: {
+                    NavigationLink(value: listItem) {
                         VideoListRowView(video: listItem.video)
                     }
                 }
@@ -92,6 +85,31 @@ struct VideoListView: View {
             }
             .navigationBarTitleDisplayMode(.large)
             .navigationTitle("Videos")
+            .navigationDestination(for: VideoListItem.self) { listItem in
+                VideoDetailView(playerModel: playerModel,
+                                videoItem: listItem,
+                                controlType: controlType)
+                .navigationTitle(listItem.name)
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(true)
+                .statusBarHidden(playerModel.fullscreenEnabled)
+                .toolbar(playerModel.fullscreenEnabled ? .hidden : .visible, for: .tabBar)
+                .toolbar(playerModel.fullscreenEnabled ? .hidden : .visible, for: .navigationBar)
+            }
+        }
+        .onChange(of: router.pendingCommand) { _, command in
+            guard case .navigateToVideo(let videoIndex, let type) = command else { return }
+            controlType = type
+            if videoIndex < playlistModel.videoListItems.count {
+                navigationPath.append(playlistModel.videoListItems[videoIndex])
+                router.pendingCommand = nil
+            }
+        }
+        .onChange(of: playlistModel.videoListItems) { _, items in
+            guard case .navigateToVideo(let videoIndex, _) = router.pendingCommand,
+                  videoIndex < items.count else { return }
+            navigationPath.append(items[videoIndex])
+            router.pendingCommand = nil
         }
     }
 
@@ -104,6 +122,7 @@ struct VideoListView: View {
 struct VideoListView_Previews: PreviewProvider {
     static var previews: some View {
         VideoListView(playerModel: PlayerModel())
+            .environmentObject(DeepLinkRouter())
     }
 }
 #endif

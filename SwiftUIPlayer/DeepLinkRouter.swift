@@ -10,7 +10,7 @@ import Foundation
 
 // MARK: - DeepLinkCommand
 
-enum DeepLinkCommand {
+enum DeepLinkCommand: Equatable {
     case navigateToVideo(videoIndex: Int, controlType: ControlType)
     case enterFullscreen
     case seek(time: TimeInterval)
