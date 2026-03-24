@@ -29,7 +29,7 @@ import BrightcovePlayerSDK
 /// - Computed properties for derived state
 /// - Complete closed loops with @Published properties
 @MainActor
-class AVIMAPlayerListViewModel: ObservableObject {
+final class AVIMAPlayerListViewModel: ObservableObject {
 
     // MARK: - Published State (Observable by View)
 

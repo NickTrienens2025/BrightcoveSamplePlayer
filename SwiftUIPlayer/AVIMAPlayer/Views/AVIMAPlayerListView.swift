@@ -110,31 +110,30 @@ struct AVIMAPlayerListView: View {
 
     @ViewBuilder
     private func videoList(videos: [AVIMAVideoItem]) -> some View {
-        List {
-            // Featured inline player for the first video.
-            // Edge-to-edge black row so the player fills the section card.
+        VStack(spacing: 0) {
+            // Featured inline player OUTSIDE the List so UITableView gesture
+            // recognizers don't intercept IMA ad taps ("Learn More", click-throughs).
             if let firstVideo = videos.first {
-                Section {
-                    AVIMAEmbeddedPlayerView(video: firstVideo)
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.black)
-                }
-                .accessibilityIdentifier(AccessibilityID.VideoList.embeddedSection)
+                AVIMAEmbeddedPlayerView(video: firstVideo)
+                    .background(Color.black)
+                    .accessibilityIdentifier(AccessibilityID.VideoList.embeddedSection)
             }
 
             // Full video list — each row navigates to the dedicated player screen.
-            Section("All Videos") {
-                ForEach(videos) { video in
-                    NavigationLink {
-                        AVIMAPlayerView(videoId: video.id)
-                    } label: {
-                        VideoRowView(video: video)
+            List {
+                Section("All Videos") {
+                    ForEach(videos) { video in
+                        NavigationLink {
+                            AVIMAPlayerView(videoId: video.id)
+                        } label: {
+                            VideoRowView(video: video)
+                        }
+                        .accessibilityIdentifier(AccessibilityID.VideoList.videoRow(id: video.id))
                     }
-                    .accessibilityIdentifier(AccessibilityID.VideoList.videoRow(id: video.id))
                 }
             }
+            .listStyle(.insetGrouped)
         }
-        .listStyle(.insetGrouped)
     }
 }
 

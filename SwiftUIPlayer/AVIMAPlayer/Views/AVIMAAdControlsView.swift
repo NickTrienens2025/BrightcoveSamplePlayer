@@ -7,43 +7,56 @@
 
 import SwiftUI
 
-/// Controls specifically for Ad playback mode.
+/// Horizontal controls bar for Ad playback, designed to sit below the video surface.
 ///
 /// Features:
-/// - Right-aligned layout
-/// - Optional mute button (default hidden)
+/// - Horizontal bar layout (expand | ad progress | spacer | skip | play/pause)
+/// - Optional expand button for embedded mode
+/// - Ad progress text ("Ad 1 of 3")
 /// - Skip button (when available)
 /// - Play/Pause toggle
-/// - No background gradient (handled by parent)
+/// - Dark background bar
 struct AVIMAAdControlsView: View {
 
     // MARK: - Properties
 
     @ObservedObject var viewModel: AVIMAPlayerViewModel
-    var showMute: Bool = false
+    var onExpand: (() -> Void)? = nil
 
     // MARK: - Body
 
     var body: some View {
-        VStack {
+        HStack(spacing: 16) {
+            // Expand button (embedded mode only)
+            if let onExpand {
+                ControlButton(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    size: 28,
+                    showBackdrop: false,
+                    accessibilityLabel: "Fullscreen",
+                    identifier: AccessibilityID.Controls.expandButton,
+                    action: onExpand
+                )
+            }
+
+            // Ad progress text
+            if let adProgress = viewModel.adProgress {
+                Text("Ad \(adProgress.currentAdNumber) of \(adProgress.totalAds)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+
             Spacer()
 
-            HStack(spacing: 24) {
-                Spacer()
-
-                if viewModel.canSkip {
-                    skipButton
-                }
-
-                playPauseButton
-
-                if showMute {
-                    muteButton
-                }
+            if viewModel.canSkip {
+                skipButton
             }
-            .font(.title2)
-            .padding()
+
+            playPauseButton
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.black)
     }
 
     // MARK: - Components
@@ -57,27 +70,16 @@ struct AVIMAAdControlsView: View {
             }
         } label: {
             Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 24)) // Smaller size
+                .font(.system(size: 18))
                 .foregroundStyle(.white)
-                .padding(12) // Padding for touch target and visual balance
+                .frame(width: 36, height: 36)
                 .background(
                     Circle()
-                        .fill(.black.opacity(0.6)) // Faded black background
+                        .fill(.white.opacity(0.15))
                 )
         }
         .buttonStyle(.plain)
         .disabled(viewModel.isLoading)
-    }
-
-    private var muteButton: some View {
-        Button {
-            viewModel.toggleMute()
-        } label: {
-            Image(systemName: viewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-        }
-        .buttonStyle(.plain)
     }
 
     private var skipButton: some View {
@@ -105,11 +107,14 @@ struct AVIMAAdControlsView: View {
 #if DEBUG
 struct AVIMAAdControlsView_Previews: PreviewProvider {
     static var previews: some View {
-        ZStack {
-            Color.black
-            AVIMAAdControlsView(viewModel: AVIMAPlayerViewModel(), showMute: true)
-                .padding()
+        VStack {
+            Spacer()
+            AVIMAAdControlsView(
+                viewModel: AVIMAPlayerViewModel(),
+                onExpand: { print("Expand") }
+            )
         }
+        .background(Color.gray)
     }
 }
 #endif

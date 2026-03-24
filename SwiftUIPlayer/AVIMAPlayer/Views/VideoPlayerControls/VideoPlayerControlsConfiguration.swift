@@ -11,7 +11,7 @@ import SwiftUI
 // MARK: - Control Actions
 
 /// Actions that can be triggered by video player controls
-enum VideoPlayerControlAction: Equatable {
+enum VideoPlayerControlAction: Equatable, Sendable {
     case play
     case pause
     case togglePlayPause
@@ -58,7 +58,7 @@ protocol VideoPlayerControlsDelegate: AnyObject {
 }
 
 /// Ad progress information (independent of ViewModel implementation)
-struct AdProgressInfo: Equatable {
+struct AdProgressInfo: Equatable, Sendable {
     let currentAdNumber: Int
     let totalAds: Int
     let currentTime: TimeInterval
@@ -116,13 +116,13 @@ struct ButtonConfiguration: Equatable {
 }
 
 /// Button position in horizontal layout
-enum ButtonPosition: String, Equatable {
+enum ButtonPosition: String, Equatable, Sendable {
     case leading
     case trailing
 }
 
 /// Play/pause button style
-enum PlayPauseStyle: String, Equatable {
+enum PlayPauseStyle: String, Equatable, Sendable {
     case large   // 60pt for center
     case medium  // 44pt for transport row
     case small   // 32pt compact

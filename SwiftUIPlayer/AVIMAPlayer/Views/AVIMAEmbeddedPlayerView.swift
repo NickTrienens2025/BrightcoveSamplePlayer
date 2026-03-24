@@ -42,20 +42,31 @@ struct AVIMAEmbeddedPlayerView: View {
     // MARK: - Body
 
     var body: some View {
-        AVIMAPlayerView(
-            video: video,
-            showNavigationChrome: false,
-            cleanupOnDisappear: false,
-            // Suppress AVPlayerViewController while fullscreen cover is open so the
-            // shared AVPlayer is rendered only by the fullscreen's AVPlayerViewController.
-            suppressPlayerView: isFullscreen,
-            onExpand: {
-                isFullscreen = true
-            },
-            viewModel: viewModel
-        )
-        .aspectRatio(video.aspectRatio, contentMode: .fit)
-        .clipped()
+        VStack(spacing: 0) {
+            AVIMAPlayerView(
+                video: video,
+                showNavigationChrome: false,
+                cleanupOnDisappear: false,
+                // Suppress AVPlayerViewController while fullscreen cover is open so the
+                // shared AVPlayer is rendered only by the fullscreen's AVPlayerViewController.
+                suppressPlayerView: isFullscreen,
+                onExpand: {
+                    isFullscreen = true
+                },
+                viewModel: viewModel
+            )
+            .aspectRatio(video.aspectRatio, contentMode: .fit)
+            .clipped()
+
+            // Ad controls bar — sits BELOW the aspect-ratio-constrained player
+            // so it never overlaps the IMA ad surface.
+            if viewModel.playbackMode == .advertisement {
+                AVIMAAdControlsView(
+                    viewModel: viewModel,
+                    onExpand: { isFullscreen = true }
+                )
+            }
+        }
         .accessibilityIdentifier(AccessibilityID.Player.embedded)
         .fullScreenCover(isPresented: $isFullscreen) {
             fullscreenPlayer
@@ -77,16 +88,39 @@ struct AVIMAEmbeddedPlayerView: View {
     ///
     /// `onAppear` shows controls immediately so they're visible the moment fullscreen opens.
     private var fullscreenPlayer: some View {
-        AVIMAPlayerView(
-            video: video,
-            allowsFullscreen: false,
-            showNavigationChrome: false,
-            cleanupOnDisappear: false,
-            onClose: {
+        VStack(spacing: 0) {
+            AVIMAPlayerView(
+                video: video,
+                allowsFullscreen: false,
+                showNavigationChrome: false,
+                cleanupOnDisappear: false,
+                viewModel: viewModel
+            )
+
+            // Ad controls bar below the player in fullscreen too
+            if viewModel.playbackMode == .advertisement {
+                AVIMAAdControlsView(viewModel: viewModel)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            // Standard iOS close button — always visible, outside AdContainerView
+            Button {
                 isFullscreen = false
-            },
-            viewModel: viewModel
-        )
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        Circle()
+                            .fill(.black.opacity(0.5))
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+            .padding(.leading, 16)
+            .accessibilityIdentifier(AccessibilityID.Controls.closeButton)
+        }
         .accessibilityIdentifier(AccessibilityID.Player.fullscreen)
         .background(Color.black.ignoresSafeArea())
         .onAppear { viewModel.showControls() }

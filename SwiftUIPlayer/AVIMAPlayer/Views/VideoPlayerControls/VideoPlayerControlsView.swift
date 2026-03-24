@@ -315,35 +315,27 @@ struct VideoPlayerControlsView: View {
     }
 
     private var closedCaptionButton: some View {
-        Button {
+        ControlButton(
+            systemImage: stateProvider.closedCaptionsEnabled ?
+                "captions.bubble.fill" : "captions.bubble",
+            size: 36,
+            accessibilityLabel: "Closed Captions",
+            identifier: AccessibilityID.Controls.ccButton
+        ) {
             stateProvider.handleAction(.toggleClosedCaptions)
-        } label: {
-            Image(systemName: stateProvider.closedCaptionsEnabled ?
-                "captions.bubble.fill" : "captions.bubble")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(8)
-                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Closed Captions")
-        .accessibilityIdentifier(AccessibilityID.Controls.ccButton)
     }
 
     private var muteButton: some View {
-        Button {
+        ControlButton(
+            systemImage: stateProvider.isMuted ?
+                "speaker.slash.fill" : "speaker.wave.2.fill",
+            size: 36,
+            accessibilityLabel: stateProvider.isMuted ? "Unmute" : "Mute",
+            identifier: AccessibilityID.Controls.muteButton
+        ) {
             stateProvider.handleAction(.toggleMute)
-        } label: {
-            Image(systemName: stateProvider.isMuted ?
-                "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(8)
-                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(stateProvider.isMuted ? "Unmute" : "Mute")
-        .accessibilityIdentifier(AccessibilityID.Controls.muteButton)
     }
 
     private var skipAdButton: some View {
@@ -501,7 +493,7 @@ struct VideoPlayerControlsView: View {
 
 /// Observable wrapper for delegate state to enable reactive UI updates
 @MainActor
-class VideoPlayerControlsStateProvider: ObservableObject {
+final class VideoPlayerControlsStateProvider: ObservableObject {
 
     // MARK: - Properties
 
@@ -528,9 +520,10 @@ class VideoPlayerControlsStateProvider: ObservableObject {
         startPolling()
     }
 
-//    deinit {
-//        stopPolling()
-//    }
+    deinit {
+        updateTimer?.invalidate()
+        updateTimer = nil
+    }
 
     // MARK: - Actions
 

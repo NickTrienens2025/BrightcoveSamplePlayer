@@ -309,6 +309,10 @@ struct AVIMAPlayerView: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
+        // During ads, disable ALL hit testing on the SwiftUI content layer so
+        // IMA's imaContainerView (behind in UIKit) receives every tap —
+        // "Learn More", click-throughs, companion ads, etc.
+        .allowsHitTesting(viewModel.playbackMode != .advertisement)
     }
 
     /// Mutually exclusive player state view
@@ -351,54 +355,14 @@ struct AVIMAPlayerView: View {
 
     /// Ad playback view — IMA renders in imaContainerView (behind hostingController.view).
     ///
-    /// Only Buttons capture touches; everything else (Spacer, Color.clear) passes
-    /// through so IMA click-throughs reach imaContainerView via UIHostingController's
-    /// SwiftUI-aware hitTest.
+    /// Fully transparent with no hit testing — IMA owns all touches in the video area.
+    /// Ad controls are rendered OUTSIDE this view (below the aspect-ratio frame)
+    /// by the parent (e.g. AVIMAEmbeddedPlayerView) so they don't overlap the ad.
     @ViewBuilder
     private var adPlaybackView: some View {
-        ZStack {
-            // Transparent base — passes all touches through to IMA.
-            Color.clear
-                .allowsHitTesting(false)
-
-            // Controls constrained to the video aspect ratio area.
-            ControlsOverlay(aspectRatio: viewModel.videoAspectRatio) {
-                ZStack {
-                    // Top bar: close (leading) and expand (trailing) buttons.
-                    VStack {
-                        HStack {
-                            if let onClose {
-                                ControlButton(
-                                    systemImage: "xmark",
-                                    size: 36,
-                                    accessibilityLabel: "Close",
-                                    identifier: AccessibilityID.Controls.closeButton,
-                                    action: onClose
-                                )
-                            } else if let onExpand {
-                                ControlButton(
-                                    systemImage: "arrow.up.left.and.arrow.down.right",
-                                    size: 36,
-                                    accessibilityLabel: "Fullscreen",
-                                    identifier: AccessibilityID.Controls.expandButton,
-                                    action: onExpand
-                                )
-                            }
-
-                            Spacer()
-                        }
-                        .padding(10)
-
-                        Spacer()
-                    }
-
-                    // Bottom-right ad controls (play/pause, skip).
-                    AVIMAAdControlsView(viewModel: viewModel)
-                }
-            }
-            .accessibilityIdentifier(AccessibilityID.Controls.overlay)
-        }
-        .accessibilityIdentifier(AccessibilityID.Player.adPlayback)
+        Color.clear
+            .allowsHitTesting(false)
+            .accessibilityIdentifier(AccessibilityID.Player.adPlayback)
     }
 
     /// Main video player view with native controls
@@ -535,7 +499,7 @@ private struct AdContainerView<Content: View>: UIViewControllerRepresentable {
 /// this VC's view via `insertSubview` (UIKit removes it from the previous parent automatically),
 /// ensuring IMA always renders in whichever player is currently on screen — even when
 /// the user opens fullscreen while an ad is playing.
-private class AdContainerViewController<Content: View>: UIViewController {
+private final class AdContainerViewController<Content: View>: UIViewController {
 
     let viewModel: AVIMAPlayerViewModel
     var hostingController: UIHostingController<Content>
@@ -551,53 +515,6 @@ private class AdContainerViewController<Content: View>: UIViewController {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    // MARK: - Custom Root View for Hit-Testing
-
-    /// Custom root view that routes touches between our SwiftUI overlay buttons
-    /// and IMA's ad elements ("Learn More", click-through overlay).
-    ///
-    /// **Problem:** The hosting view (SwiftUI) sits on top of `imaContainerView`
-    /// (IMA ad content). We need our overlay buttons (expand, close, play/pause,
-    /// skip) to be tappable, while also letting taps on empty areas pass through
-    /// to IMA elements underneath.
-    ///
-    /// **Fix:** Check the hosting view first. `_UIHostingView.hitTest` is
-    /// SwiftUI-aware — it returns non-nil only for interactive elements (Button,
-    /// gesture recognizers) and nil for non-interactive areas (Spacer, views with
-    /// `allowsHitTesting(false)`). If the hosting view finds an interactive
-    /// element, use it (our buttons win). Otherwise, check IMA for its elements.
-    private class AdContainerRootView: UIView {
-        weak var hostingView: UIView?
-        weak var imaContainerView: UIView?
-
-        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-            // Priority 1: SwiftUI overlay buttons (expand, close, play/pause, skip).
-            if let hostingView = hostingView {
-                let hostingPoint = convert(point, to: hostingView)
-                if let hostingHit = hostingView.hitTest(hostingPoint, with: event) {
-                    return hostingHit
-                }
-            }
-
-            // Priority 2: IMA ad elements ("Learn More", click-through overlay).
-            // Only reached when the hosting view has no interactive element at this point.
-            if let imaContainer = imaContainerView, !imaContainer.isHidden {
-                let imaPoint = convert(point, to: imaContainer)
-                if let imaHit = imaContainer.hitTest(imaPoint, with: event),
-                   imaHit !== imaContainer {
-                    return imaHit
-                }
-            }
-
-            // Nothing interactive — pass through entirely.
-            return nil
-        }
-    }
-
-    override func loadView() {
-        view = AdContainerRootView()
     }
 
     // MARK: - Lifecycle
@@ -700,23 +617,16 @@ private class AdContainerViewController<Content: View>: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // Add the SwiftUI hosting view on top. The shared imaContainerView (from the
-        // ViewModel) is added in viewWillAppear so it can move between embedded and
-        // fullscreen VCs without constraint conflicts.
+        // Add the SwiftUI hosting view. The shared imaContainerView (from the
+        // ViewModel) is added in viewWillAppear so it can move between embedded
+        // and fullscreen VCs without constraint conflicts.
         addChild(hostingController)
         view.addSubview(hostingController.view)
         hostingController.view.frame = view.bounds
         hostingController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        hostingController.view.backgroundColor = .clear  // Transparent so IMA shows through
+        hostingController.view.backgroundColor = .clear
         hostingController.view.isOpaque = false
         hostingController.didMove(toParent: self)
-
-        // Wire up custom hit-testing references so IMA elements (e.g., "Learn More")
-        // can receive touches that pass through the hosting view.
-        if let rootView = view as? AdContainerRootView {
-            rootView.hostingView = hostingController.view
-            rootView.imaContainerView = viewModel.imaContainerView
-        }
     }
 
     // MARK: - IMA Container Layout
@@ -761,11 +671,23 @@ private class AdContainerViewController<Content: View>: UIViewController {
     }
 
     func setAdContainerVisible(_ visible: Bool) {
-        let currentlyHidden = viewModel.imaContainerView.isHidden
-        let shouldHide = !visible
-        guard currentlyHidden != shouldHide else { return }
-        debugPrintWithTimestamp("📺 Setting IMA container visible: \(visible)")
-        viewModel.imaContainerView.isHidden = shouldHide
+        let container = viewModel.imaContainerView
+
+        container.isHidden = !visible
+
+        if visible {
+            // Bring IMA to front so it owns all touches during ads
+            // ("Learn More", click-throughs). Ad controls (expand, play/pause,
+            // skip) live outside this VC in AVIMAAdControlsView.
+            view.bringSubviewToFront(container)
+            hostingController.view.isUserInteractionEnabled = false
+            debugPrintWithTimestamp("📺 IMA container visible — brought to front")
+        } else {
+            // Main video mode: hosting view (SwiftUI controls) on top.
+            view.bringSubviewToFront(hostingController.view)
+            hostingController.view.isUserInteractionEnabled = true
+            debugPrintWithTimestamp("📺 IMA container hidden — hosting view on top")
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -916,12 +838,11 @@ private struct PlayerViewRepresentable: UIViewControllerRepresentable {
                     self.viewModel.play()
                 }
             }, completion: { _ in
-                // Ensure playback continues after transition
+                // Ensure playback continues after transition.
+                // Already @MainActor — no DispatchQueue.main.async needed.
                 if self.wasPlayingBeforeFullscreen {
-                    DispatchQueue.main.async {
-                        self.viewModel.play()
-                        debugPrintWithTimestamp("   ✅ Fullscreen entered - playback resumed")
-                    }
+                    self.viewModel.play()
+                    debugPrintWithTimestamp("   ✅ Fullscreen entered - playback resumed")
                 }
             })
         }
@@ -951,12 +872,11 @@ private struct PlayerViewRepresentable: UIViewControllerRepresentable {
                     self.viewModel.play()
                 }
             }, completion: { _ in
-                // Ensure playback continues after transition
+                // Ensure playback continues after transition.
+                // Already @MainActor — no DispatchQueue.main.async needed.
                 if self.wasPlayingBeforeFullscreen {
-                    DispatchQueue.main.async {
-                        self.viewModel.play()
-                        debugPrintWithTimestamp("   ✅ Fullscreen exited - playback resumed")
-                    }
+                    self.viewModel.play()
+                    debugPrintWithTimestamp("   ✅ Fullscreen exited - playback resumed")
                 }
             })
         }

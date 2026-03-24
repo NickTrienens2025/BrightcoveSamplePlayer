@@ -63,12 +63,12 @@ import BrightcovePlayerSDK
 /// - During ads: Only pause/play and mute allowed
 /// - During main content: Full controls available
 @MainActor
-class AVIMAPlayerViewModel: NSObject, ObservableObject {
+final class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     // MARK: - Nested Types
 
     /// Represents the current playback mode (mutually exclusive states)
-    enum PlaybackMode: Equatable {
+    enum PlaybackMode: Equatable, Sendable {
         /// No content is loaded - initializing
         case idle
 
@@ -80,7 +80,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     }
 
     /// Represents the state of a player
-    enum PlayerState: Equatable {
+    enum PlayerState: Equatable, Sendable {
         /// Player is idle
         case idle
 
@@ -124,7 +124,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     }
 
     /// Progress information for ad playback
-    struct AdProgress: Equatable, CustomStringConvertible {
+    struct AdProgress: Equatable, Sendable, CustomStringConvertible {
         /// Current ad position (1-based)
         let currentAdNumber: Int
 
@@ -488,9 +488,8 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
         switch playbackMode {
         case .mainVideo:
-            // Resume Brightcove playback controller
-            mainPlaybackController?.play()
-            // Also ensure AVPlayer is playing
+            // Drive AVPlayer directly — BCOVPlaybackController's internal session
+            // can be invalidated during IMA ad flow, causing EXC_BAD_ACCESS.
             mainPlayer?.play()
             mainVideoState = .playing
             debugPrintWithTimestamp("   Main video resumed")
@@ -515,9 +514,6 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
         switch playbackMode {
         case .mainVideo:
-            // Pause Brightcove playback controller
-            mainPlaybackController?.pause()
-            // Also pause AVPlayer
             mainPlayer?.pause()
             mainVideoState = .paused
             debugPrintWithTimestamp("   Main video paused")
@@ -966,9 +962,9 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     /// Resumes playback when returning from background.
     ///
-    /// - **Ads**: Always resume — the user left via "Learn More" or app switch
-    ///   and IMA expects continuous playback. A paused ad with no visible controls
-    ///   is a dead-end UX.
+    /// - **Ads**: Resume via `adsManager.resume()` directly — IMA manages its own
+    ///   playback state internally. Using our `play()` would reset IMA's state and
+    ///   restart the ad from the beginning.
     /// - **Main video**: Stay paused — unexpected audio on foreground is jarring.
     ///   The user can tap play to continue.
     private func handleWillEnterForeground() {
@@ -977,11 +973,10 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         if wasPlayingBeforeBackground {
             switch playbackMode {
             case .advertisement:
-                // Resume ad playback — IMA ads should continue uninterrupted.
-                // The user left via "Learn More" or Control Center; keeping the ad
-                // paused with no way to see controls is a dead-end.
-                play()
-                debugPrintWithTimestamp("   ▶️ Ad resumed automatically")
+                // Resume via IMA directly — preserves ad position.
+                adsManager?.resume()
+                adState = .playing
+                debugPrintWithTimestamp("   ▶️ Ad resumed via adsManager.resume()")
 
             case .mainVideo:
                 // Stay paused — user can tap play when ready.
@@ -1008,7 +1003,6 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         }
 
         // Pause main video
-        mainPlaybackController?.pause()
         mainPlayer?.pause()
 
         // Unhide the IMA container immediately — don't wait for SwiftUI's
@@ -1028,11 +1022,17 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
     ///
     /// Ensures clean state transition by stopping ads and activating main video.
     private func switchToMainVideoMode() {
-        debugPrintWithTimestamp("🔄 Switching to main video mode")
+        debugPrintWithTimestamp("    🔄 Switching to main video mode")
 
-        // Validate state
+        // Validate state — prevent double-transition
         guard playbackMode != .mainVideo else {
             debugPrintWithTimestamp("   ⚠️ Already in main video mode")
+            return
+        }
+
+        guard let player = mainPlayer else {
+            debugPrintWithTimestamp("   ⚠️ Main player not available, cannot switch to main video")
+            playbackMode = .idle
             return
         }
 
@@ -1040,12 +1040,13 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         adState = .idle
         currentAdProgress = nil
 
-        // Activate main video mode
+        // Activate main video mode BEFORE calling play — ensures any
+        // delegate callbacks see the correct mode.
         playbackMode = .mainVideo
 
-        // Start main video playback
-        mainPlaybackController?.play()
-        mainPlayer?.play()
+        // Resume via AVPlayer directly — BCOVPlaybackController's internal session
+        // can be invalidated during IMA ad playback, causing EXC_BAD_ACCESS.
+        player.play()
         mainVideoState = .playing
 
         debugPrintWithTimestamp("   ✅ Main video mode active")
@@ -1125,7 +1126,6 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
         debugPrintWithTimestamp("🎯 Triggering midroll ad at \(adCuePoints[index].position)s")
 
         // Pause main video
-        mainPlaybackController?.pause()
         mainPlayer?.pause()
 
         // Destroy previous ads manager (it's one-shot per ad break)
@@ -1252,7 +1252,7 @@ class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     // MARK: - Error Types
 
-    enum PlayerError: LocalizedError {
+    enum PlayerError: LocalizedError, Sendable {
         case invalidAdTagURL
         case adLoadFailed(String)
         case videoLoadFailed(String)
@@ -1344,7 +1344,14 @@ extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
 
         debugPrintWithTimestamp("📺 Initializing ads manager")
         manager.delegate = self
-        manager.initialize(with: nil)
+
+        // Provide rendering settings with linkOpenerPresentingController so IMA
+        // can present its in-app browser when the user taps "Learn More".
+        // Without this, IMA has no VC to present from and click-throughs fail silently.
+        let renderSettings = IMAAdsRenderingSettings()
+        renderSettings.linkOpenerPresentingController = adViewController
+        manager.initialize(with: renderSettings)
+
         self.adsManager = manager
 
         // Mark pre-roll as played
@@ -1439,6 +1446,16 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
                 }
             }
 
+        case .TAPPED:
+            // User tapped "Learn More" or the ad click-through area.
+            // IMA handles pause/resume and browser presentation internally —
+            // do NOT call adsManager.pause() here or it disrupts IMA's state.
+            debugPrintWithTimestamp("   Ad tapped — click-through (IMA handles presentation)")
+
+        case .FIRST_QUARTILE, .MIDPOINT, .THIRD_QUARTILE:
+            // VAST quartile progress tracking — no action needed
+            break
+
         default:
             debugPrintWithTimestamp("   Other event: \(event.type)")
             break
@@ -1461,7 +1478,6 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
 
     func adsManagerDidRequestContentPause(_ adsManager: IMAAdsManager) {
         // Ad is starting, pause main video
-        mainPlaybackController?.pause()
         mainPlayer?.pause()
     }
 

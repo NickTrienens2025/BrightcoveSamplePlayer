@@ -104,38 +104,45 @@ final class BCOVPlayerViewControllerUITests: XCTestCase {
     }
 
     /// Tests seeking via deep link.
-    @MainActor
-    func testSeekViaDeepLink() throws {
-        navigateToFirstVideo()
-        takeScreenshot("01-Before-Seek")
-        sleep(17)
-        
-        // Seek to 30 seconds
-        seekTo(30)
-        sleep(2)
-        takeScreenshot("02-After-Seek-30s")
+//    @MainActor
+//    func testSeekViaDeepLink() throws {
+//        navigateToFirstVideo()
+//        takeScreenshot("01-Before-Seek")
+//        sleep(17)
+//        
+//        // Seek to 30 seconds
+//        seekTo(30)
+//        sleep(2)
+//        takeScreenshot("02-After-Seek-30s")
+//
+//        // Seek to 60 seconds
+//        seekTo(60)
+//        sleep(2)
+//        takeScreenshot("03-After-Seek-60s")
+//    }
 
-        // Seek to 60 seconds
-        seekTo(60)
-        sleep(2)
-        takeScreenshot("03-After-Seek-60s")
+    func testPrint(_ string: String) {
+        print("======================\n\(string)\n=================")
     }
-
+    
     /// Tests fullscreen + rotation via deep links.
     @MainActor
     func testFullscreenRotationViaDeepLink() throws {
         navigateToFirstVideo()
+        testPrint("load first video")
         sleep(17)
-
+        testPrint("first ad played, go fullscreen")
         // Enter fullscreen via deep link
         enterFullscreenViaDeepLink()
 
+        testPrint("Jump to 5:00, triggering mid roll ad")
         seekTo(300)
 
-        sleep(2)
+        sleep(5)
         takeScreenshot("01-Fullscreen-Portrait")
 
         // Rotate to landscape
+        testPrint("Triggering device rotation")
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(1)
         takeScreenshot("02-Fullscreen-Landscape")

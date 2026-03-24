@@ -15,7 +15,7 @@ import BrightcovePlayerSDK
 ///
 /// Tracks both the position and whether the ad has already played
 /// in the current session to support once-per-session midroll behavior.
-struct AdCuePoint: Identifiable, Equatable {
+struct AdCuePoint: Identifiable, Equatable, Sendable {
     let id = UUID()
 
     /// Position in the video timeline (seconds)
@@ -27,7 +27,7 @@ struct AdCuePoint: Identifiable, Equatable {
     /// Whether this cue point has already played in the current session
     var hasPlayed: Bool = false
 
-    enum CuePointType: Equatable {
+    enum CuePointType: Equatable, Sendable {
         /// Pre-roll ad (position == 0)
         case preRoll
         /// Mid-roll ad (0 < position < duration)
