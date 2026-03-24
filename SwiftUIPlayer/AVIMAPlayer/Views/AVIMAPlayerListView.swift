@@ -26,6 +26,7 @@ struct AVIMAPlayerListView: View {
     // MARK: - Properties
 
     @StateObject private var viewModel: AVIMAPlayerListViewModel
+    @State private var fullscreenVideo: AVIMAVideoItem?
 
     // MARK: - Initialization
 
@@ -53,6 +54,9 @@ struct AVIMAPlayerListView: View {
         }
         .refreshable {
             await viewModel.refresh()
+        }
+        .fullScreenCover(item: $fullscreenVideo) { video in
+            fullscreenPlayerView(video: video)
         }
     }
 
@@ -123,10 +127,25 @@ struct AVIMAPlayerListView: View {
             List {
                 Section("All Videos") {
                     ForEach(videos) { video in
-                        NavigationLink {
-                            AVIMAPlayerView(videoId: video.id)
-                        } label: {
-                            VideoRowView(video: video)
+                        HStack {
+                            NavigationLink {
+                                AVIMAPlayerView(videoId: video.id)
+                            } label: {
+                                VideoRowView(video: video)
+                            }
+
+                            // Fullscreen launch button
+                            Button {
+                                fullscreenVideo = video
+                            } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 32, height: 32)
+                                    .background(Circle().fill(.blue))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Play fullscreen")
                         }
                         .accessibilityIdentifier(AccessibilityID.VideoList.videoRow(id: video.id))
                     }
@@ -134,6 +153,35 @@ struct AVIMAPlayerListView: View {
             }
             .listStyle(.insetGrouped)
         }
+    }
+
+    // MARK: - Fullscreen Player
+
+    /// Standalone fullscreen player presented via `.fullScreenCover`.
+    /// No navigation chrome — close button overlay dismisses.
+    private func fullscreenPlayerView(video: AVIMAVideoItem) -> some View {
+        AVIMAPlayerView(
+            video: video,
+            showNavigationChrome: false
+        )
+        .overlay(alignment: .topLeading) {
+            Button {
+                fullscreenVideo = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(.black.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+            .padding(.leading, 16)
+            .accessibilityIdentifier(AccessibilityID.Controls.closeButton)
+        }
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .persistentSystemOverlays(.hidden)
     }
 }
 

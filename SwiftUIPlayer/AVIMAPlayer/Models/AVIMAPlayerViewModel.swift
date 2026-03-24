@@ -369,6 +369,22 @@ final class AVIMAPlayerViewModel: NSObject, ObservableObject {
         startLifecycleMonitoring()
     }
 
+    deinit {
+        // Cancel lifecycle monitoring and clean up time observers.
+        // The remaining cleanup (adsManager, players) will be released
+        // automatically since we're the last strong reference holder.
+        lifecycleTask?.cancel()
+        if let (observer, player) = mainTimeObserver {
+            player.removeTimeObserver(observer)
+        }
+        if let (observer, player) = adTimeObserver {
+            player.removeTimeObserver(observer)
+        }
+        mainPlayer?.pause()
+        adPlayer?.pause()
+        adsManager?.destroy()
+    }
+
     // MARK: - Public API (Called by View)
 
     /// Returns the main player instance for rendering in the View.
@@ -951,40 +967,51 @@ final class AVIMAPlayerViewModel: NSObject, ObservableObject {
     }
 
     /// Pauses playback and records state so we can resume correctly on return.
+    ///
+    /// During ads, do NOT call adsManager.pause() — IMA manages its own lifecycle
+    /// (e.g., it auto-pauses for click-throughs). Manually pausing corrupts IMA's
+    /// internal state and causes the ad to restart from the beginning on resume.
     private func handleDidEnterBackground() {
-        wasPlayingBeforeBackground = isPlaying
-        debugPrintWithTimestamp("📱 Background — wasPlaying: \(wasPlayingBeforeBackground), mode: \(playbackMode)")
+        debugPrintWithTimestamp("📱 Background — isPlaying: \(isPlaying), mode: \(playbackMode)")
 
-        if isPlaying {
-            pause()
+        switch playbackMode {
+        case .mainVideo:
+            wasPlayingBeforeBackground = isPlaying
+            if isPlaying {
+                mainPlayer?.pause()
+                mainVideoState = .paused
+            }
+
+        case .advertisement:
+            // Let IMA handle its own pause — do not touch adsManager here.
+            wasPlayingBeforeBackground = true
+            debugPrintWithTimestamp("   ⏸️ Ad background — IMA manages pause internally")
+
+        case .idle:
+            wasPlayingBeforeBackground = false
         }
     }
 
     /// Resumes playback when returning from background.
     ///
-    /// - **Ads**: Resume via `adsManager.resume()` directly — IMA manages its own
-    ///   playback state internally. Using our `play()` would reset IMA's state and
-    ///   restart the ad from the beginning.
+    /// - **Ads**: Do nothing — IMA resumes automatically when the app returns.
+    ///   Calling adsManager.resume() after IMA's own internal pause corrupts state.
     /// - **Main video**: Stay paused — unexpected audio on foreground is jarring.
-    ///   The user can tap play to continue.
     private func handleWillEnterForeground() {
         debugPrintWithTimestamp("📱 Foreground — wasPlaying: \(wasPlayingBeforeBackground), mode: \(playbackMode)")
 
-        if wasPlayingBeforeBackground {
-            switch playbackMode {
-            case .advertisement:
-                // Resume via IMA directly — preserves ad position.
-                adsManager?.resume()
-                adState = .playing
-                debugPrintWithTimestamp("   ▶️ Ad resumed via adsManager.resume()")
+        switch playbackMode {
+        case .advertisement:
+            // IMA handles its own resume — do not touch adsManager.
+            debugPrintWithTimestamp("   ▶️ Ad foreground — IMA manages resume internally")
 
-            case .mainVideo:
-                // Stay paused — user can tap play when ready.
-                debugPrintWithTimestamp("   ⏸️ Main video stays paused")
-
-            case .idle:
-                break
+        case .mainVideo:
+            if wasPlayingBeforeBackground {
+                debugPrintWithTimestamp("   ⏸️ Main video stays paused — user can tap play")
             }
+
+        case .idle:
+            break
         }
 
         wasPlayingBeforeBackground = false

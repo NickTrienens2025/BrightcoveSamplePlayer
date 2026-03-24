@@ -46,7 +46,7 @@ struct AVIMAEmbeddedPlayerView: View {
             AVIMAPlayerView(
                 video: video,
                 showNavigationChrome: false,
-                cleanupOnDisappear: false,
+                
                 // Suppress AVPlayerViewController while fullscreen cover is open so the
                 // shared AVPlayer is rendered only by the fullscreen's AVPlayerViewController.
                 suppressPlayerView: isFullscreen,
@@ -71,17 +71,18 @@ struct AVIMAEmbeddedPlayerView: View {
         .fullScreenCover(isPresented: $isFullscreen) {
             fullscreenPlayer
         }
-        .onDisappear {
-            viewModel.onDisappear()
-        }
+        // No .onDisappear cleanup here — SwiftUI fires .onDisappear when the
+        // app backgrounds, which would destroy the player and restart ads on return.
+        // Cleanup happens automatically when @StateObject is deallocated (i.e., when
+        // the parent view that owns this embedded player is removed from the hierarchy).
     }
 
     // MARK: - Fullscreen Player
 
     /// Full-screen presentation sharing the same ViewModel.
     ///
-    /// Uses `cleanupOnDisappear: false` so dismissing this cover does NOT destroy
-    /// the ViewModel — the embedded player continues using it immediately.
+    /// Shares the same @StateObject ViewModel — dismissing this cover does NOT
+    /// destroy the ViewModel, the embedded player continues using it immediately.
     ///
     /// No NavigationStack — the video fills the entire screen edge-to-edge.
     /// The close button lives inside the controls overlay and hides/shows with controls.
@@ -93,7 +94,7 @@ struct AVIMAEmbeddedPlayerView: View {
                 video: video,
                 allowsFullscreen: false,
                 showNavigationChrome: false,
-                cleanupOnDisappear: false,
+                
                 viewModel: viewModel
             )
 

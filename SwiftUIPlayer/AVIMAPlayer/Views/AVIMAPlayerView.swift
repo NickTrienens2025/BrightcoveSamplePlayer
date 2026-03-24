@@ -42,11 +42,6 @@ struct AVIMAPlayerView: View {
     /// Set to false when embedding the player inline (e.g. AVIMAEmbeddedPlayerView).
     private let showNavigationChrome: Bool
 
-    /// Whether to clean up the ViewModel when this view disappears.
-    /// Set to false when sharing a ViewModel with a fullscreen cover so the
-    /// embedded player's ViewModel isn't destroyed on fullscreen dismissal.
-    private let cleanupOnDisappear: Bool
-
     /// Callback invoked when the expand/fullscreen button is tapped.
     /// When non-nil, an expand button is rendered as the last element of the player
     /// ZStack so it wins UIKit hit-testing over IMA's content (including during ads).
@@ -95,11 +90,10 @@ struct AVIMAPlayerView: View {
     /// - Parameter videoId: The Brightcove video ID
     /// - Parameter allowsFullscreen: Whether fullscreen mode is allowed (default: false)
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(videoId: String, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, onClose: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
+    init(videoId: String, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, onClose: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
         self.videoSource = .id(videoId)
         self.allowsFullscreen = allowsFullscreen
         self.showNavigationChrome = showNavigationChrome
-        self.cleanupOnDisappear = cleanupOnDisappear
         self.suppressPlayerView = suppressPlayerView
         self.onExpand = onExpand
         self.onClose = onClose
@@ -116,11 +110,10 @@ struct AVIMAPlayerView: View {
     /// - Parameter video: The video to play
     /// - Parameter allowsFullscreen: Whether fullscreen mode is allowed (default: false)
     /// - Parameter viewModel: Optional ViewModel for testing
-    init(video: AVIMAVideoItem, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, cleanupOnDisappear: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, onClose: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
+    init(video: AVIMAVideoItem, allowsFullscreen: Bool = false, showNavigationChrome: Bool = true, suppressPlayerView: Bool = false, onExpand: (() -> Void)? = nil, onClose: (() -> Void)? = nil, viewModel: AVIMAPlayerViewModel? = nil) {
         self.videoSource = .item(video)
         self.allowsFullscreen = allowsFullscreen
         self.showNavigationChrome = showNavigationChrome
-        self.cleanupOnDisappear = cleanupOnDisappear
         self.suppressPlayerView = suppressPlayerView
         self.onExpand = onExpand
         self.onClose = onClose
@@ -181,9 +174,9 @@ struct AVIMAPlayerView: View {
         .task {
             await loadVideoFromSource()
         }
-        .onDisappear {
-            if cleanupOnDisappear { viewModel.onDisappear() }
-        }
+        // No .onDisappear cleanup — SwiftUI fires .onDisappear on app background,
+        // which would destroy the player and restart ads. Cleanup happens via
+        // @StateObject deallocation (deinit) when the view is truly removed.
     }
 
     // MARK: - Computed Properties
