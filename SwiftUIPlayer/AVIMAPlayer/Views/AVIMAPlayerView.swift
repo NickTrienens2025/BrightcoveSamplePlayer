@@ -165,6 +165,7 @@ struct AVIMAPlayerView: View {
             AdContainerView(
                 viewModel: viewModel,
                 showAdContainer: viewModel.playbackMode == .advertisement,
+                isActive: !suppressPlayerView,
                 aspectRatio: viewModel.videoAspectRatio
             ) {
                 content
@@ -466,6 +467,10 @@ private struct AdContainerView<Content: View>: UIViewControllerRepresentable {
 
     let viewModel: AVIMAPlayerViewModel
     let showAdContainer: Bool
+    /// Whether this container is the active (visible) one. When the embedded
+    /// player is suppressed during fullscreen, `isActive` is false. When it
+    /// flips back to true (fullscreen dismissed), we reclaim `imaContainerView`.
+    let isActive: Bool
     let aspectRatio: Double
     let content: () -> Content
 
@@ -479,6 +484,15 @@ private struct AdContainerView<Content: View>: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: AdContainerViewController<Content>, context: Context) {
         uiViewController.updateContent(content())
+
+        // Reclaim the shared imaContainerView when this VC becomes active.
+        // Handles fullscreen → embedded return where viewWillAppear doesn't
+        // fire (SwiftUI fullScreenCover doesn't trigger UIKit lifecycle on
+        // covered child VCs).
+        if isActive {
+            uiViewController.reparentIMAContainerIfNeeded()
+        }
+
         uiViewController.setAdContainerVisible(showAdContainer)
         uiViewController.updateAspectRatio(aspectRatio)
     }
@@ -489,9 +503,16 @@ private struct AdContainerView<Content: View>: UIViewControllerRepresentable {
 /// **Shared imaContainerView:**
 /// The IMA rendering surface (`viewModel.imaContainerView`) is owned by the ViewModel
 /// so it survives fullscreen ↔ embedded transitions. `viewWillAppear` reparents it into
-/// this VC's view via `insertSubview` (UIKit removes it from the previous parent automatically),
-/// ensuring IMA always renders in whichever player is currently on screen — even when
-/// the user opens fullscreen while an ad is playing.
+/// this VC's view via `insertSubview`, ensuring IMA always renders in whichever player
+/// is currently on screen.
+///
+/// **Touch routing (Z-order toggle):**
+/// During ads, `imaContainerView` is brought to front via `bringSubviewToFront` and
+/// `hostingController.view.isUserInteractionEnabled` is disabled — IMA owns all touches.
+/// During main video, the hosting view is on top with interaction enabled for SwiftUI controls.
+/// Previously used a custom `AdContainerRootView` with `hitTest` override to route touches
+/// between SwiftUI and IMA, but IMA handles click-throughs via gesture recognizers on the
+/// container itself, not via child subview hit testing, so the custom hitTest approach failed.
 private final class AdContainerViewController<Content: View>: UIViewController {
 
     let viewModel: AVIMAPlayerViewModel
@@ -520,49 +541,71 @@ private final class AdContainerViewController<Content: View>: UIViewController {
 
     /// Reparents the shared IMA container into this VC's view if it isn't already.
     ///
-    /// Called from `viewWillAppear` (initial/reappear) and `viewWillTransition`
-    /// (orientation changes during fullscreen presentation). This ensures IMA always
-    /// renders in whichever `AdContainerViewController` is currently on screen.
+    /// Called from `viewWillAppear`, `updateUIViewController` (via `isActive` flag),
+    /// and `viewWillTransition`. Ensures IMA renders in whichever
+    /// `AdContainerViewController` is currently on screen.
     ///
-    /// Also transfers any IMA-added child view controllers (e.g. `IMAAdViewController`)
-    /// from the previous parent to this VC to prevent `UIViewControllerHierarchyInconsistency`.
+    /// **Known limitation — IMA "Learn More" chrome during embedded↔fullscreen:**
+    /// IMA's `IMAAdDisplayContainer` creates overlay views (including "Learn More")
+    /// as children of its internal `IMAAdViewController`, which is a child VC of
+    /// whichever `AdContainerViewController` was active when `adsManager.start()`
+    /// fired. Moving the container view to a new VC during an active ad preserves
+    /// the ad VIDEO (it's a subview of imaContainerView) but loses the OVERLAY
+    /// CHROME because:
     ///
-    /// **Two-phase transfer:**
-    /// 1. Orphan IMA child VCs (removeFromParent) — now they have NO parent
-    /// 2. Move the container view (insertSubview) — UIKit won't check parentless children
-    /// 3. Adopt IMA child VCs (addChild) — child view IS now in self's hierarchy
-    private func reparentIMAContainerIfNeeded() {
+    /// **Attempted fix 1 — Custom hitTest (AdContainerRootView):**
+    /// Overrode `hitTest` on the root view to route touches between SwiftUI
+    /// controls and IMA elements. Didn't work because IMA handles click-throughs
+    /// via gesture recognizers on the container, not via child subview hit testing.
+    /// The `imaHit !== imaContainer` filter also blocked IMA's tap handler.
+    ///
+    /// **Attempted fix 2 — Re-adopt orphaned IMA child VCs (`addChild`):**
+    /// After orphaning IMA's `IMAAdViewController` from the old parent and
+    /// moving the container, re-adopted it into the new parent via
+    /// `addChild(child); child.didMove(toParent: self)`. This preserved
+    /// "Learn More" in fullscreen but broke the return path: coming back to
+    /// embedded mode showed black screen with audio because IMA's internal
+    /// state was confused by the double-reparenting cycle.
+    ///
+    /// **Current approach — Orphan-only + Z-order toggle:**
+    /// Orphan IMA child VCs (so UIKit allows the view move), move the container,
+    /// bring it to front during ads. The ad video plays correctly in both modes.
+    /// "Learn More" works in the original VC context but is lost after reparenting.
+    /// `linkOpenerPresentingController` is updated via `topMostViewController` so
+    /// if the user CAN tap "Learn More" (e.g., before the first transition), the
+    /// browser presentation uses the correct VC.
+    ///
+    /// **TODO:** Investigate creating a fresh `IMAAdDisplayContainer` + re-requesting
+    /// the ad from IMA when transitioning to fullscreen mid-ad, or using IMA's
+    /// companion ad slots to render "Learn More" outside the container.
+    func reparentIMAContainerIfNeeded() {
         let container = viewModel.imaContainerView
 
         if container.superview !== view {
-            // Capture previous parent VC BEFORE detaching (responder chain breaks after removeFromSuperview).
             let previousParentVC = findViewController(for: container)
 
-            debugPrintWithTimestamp("🔄 Reparenting IMA container — previousParent: \(String(describing: previousParentVC)) → self: \(self)")
-            debugPrintWithTimestamp("   previousParent.children: \(previousParentVC?.children.map { String(describing: type(of: $0)) } ?? [])")
-            debugPrintWithTimestamp("   self.children: \(self.children.map { String(describing: type(of: $0)) })")
-
-            // Phase 1: Orphan IMA child VCs so they have NO parent.
-            // This must happen BEFORE insertSubview — UIKit validates that any
-            // child VC whose view is a descendant of the moved view has the
-            // correct parent. Orphaned VCs (parent == nil) pass this check.
+            // Orphan IMA child VCs so they have NO parent. Required BEFORE
+            // insertSubview — UIKit validates that any child VC whose view is
+            // a descendant of the moved view has the correct parent.
+            // Orphaned VCs (parent == nil) pass this check.
             if let previousParentVC {
                 orphanIMAChildViewControllers(from: previousParentVC)
             }
 
-            // Phase 2: Move the container view. Safe because IMA child VCs are parentless.
+            // Move the container view. Safe because IMA child VCs are parentless.
             container.removeFromSuperview()
-            view.insertSubview(container, at: 0)   // Behind hostingController.view
+            view.insertSubview(container, at: 0)
             view.setNeedsLayout()
-
-            // NOTE: Do NOT re-adopt orphaned IMA child VCs into self.
-            // IMA manages its own child VC hierarchy internally via setAdContainer.
-            // Manually calling addChild confuses IMA's rendering state.
-
-            debugPrintWithTimestamp("   ✅ Reparenting complete — self.children: \(self.children.map { String(describing: type(of: $0)) })")
         }
 
-        viewModel.setAdContainer(containerView: container, viewController: self)
+        viewModel.setAdContainer(containerView: container, viewController: topMostViewController)
+
+        // If an ad is playing, bring the container to front immediately.
+        // SwiftUI won't re-call updateUIViewController since playbackMode
+        // hasn't changed, so setAdContainerVisible won't fire automatically.
+        if viewModel.playbackMode == .advertisement {
+            setAdContainerVisible(true)
+        }
     }
 
     /// Removes IMA child view controllers from their current parent, returning
@@ -605,6 +648,18 @@ private final class AdContainerViewController<Content: View>: UIViewController {
             responder = current.next
         }
         return nil
+    }
+
+    /// Returns the leaf VC in the presentation chain. IMA calls `present()` on
+    /// the VC we give it — if that VC is behind a `.fullScreenCover`, the
+    /// presentation fails. Walking to the top-most presented VC ensures IMA
+    /// always gets the VC that's actually on screen.
+    private var topMostViewController: UIViewController {
+        var vc: UIViewController = self
+        while let presented = vc.presentedViewController {
+            vc = presented
+        }
+        return vc
     }
 
     override func viewDidLoad() {

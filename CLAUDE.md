@@ -165,6 +165,12 @@ func onTap()                                  // Too generic
 - **Lifecycle:** Use standard names: `onAppear`, `onDisappear`, `didBecomeActive`
 - **Avoid:** UI-specific terms like "tapped", "pressed", "clicked" in method names
 
+### Code Organization
+
+- Use `// MARK: -` to organize ViewModel sections (Published Properties, Private Properties, Public API, Private Implementation)
+- 4-space indentation (no tabs)
+- File naming: `FeatureName+Extension.swift`, `FeatureNameView.swift`
+
 ---
 
 ## SwiftUI Patterns

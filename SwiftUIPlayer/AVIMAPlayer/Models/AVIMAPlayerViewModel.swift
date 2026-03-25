@@ -310,6 +310,10 @@ final class AVIMAPlayerViewModel: NSObject, ObservableObject {
     /// IMA ads manager
     private var adsManager: IMAAdsManager?
 
+    /// IMA rendering settings — stored so linkOpenerPresentingController can be
+    /// updated when the presenting VC changes (embedded ↔ fullscreen transition).
+    private var adsRenderingSettings: IMAAdsRenderingSettings?
+
     /// Current ad being played (for progress tracking)
     private var currentAd: IMAAd?
 
@@ -416,6 +420,10 @@ final class AVIMAPlayerViewModel: NSObject, ObservableObject {
         // Resume initializeIMAPlayer if it's waiting for the container.
         adContainerContinuation?.resume()
         adContainerContinuation = nil
+
+        // Update IMA's link opener to the current VC so "Learn More"
+        // can present from whichever VC is on screen (embedded or fullscreen).
+        adsRenderingSettings?.linkOpenerPresentingController = viewController
     }
 
     /// Enters fullscreen mode for the current player.
@@ -1374,9 +1382,10 @@ extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
 
         // Provide rendering settings with linkOpenerPresentingController so IMA
         // can present its in-app browser when the user taps "Learn More".
-        // Without this, IMA has no VC to present from and click-throughs fail silently.
+        // Stored so we can update the VC when transitioning embedded ↔ fullscreen.
         let renderSettings = IMAAdsRenderingSettings()
         renderSettings.linkOpenerPresentingController = adViewController
+        self.adsRenderingSettings = renderSettings
         manager.initialize(with: renderSettings)
 
         self.adsManager = manager

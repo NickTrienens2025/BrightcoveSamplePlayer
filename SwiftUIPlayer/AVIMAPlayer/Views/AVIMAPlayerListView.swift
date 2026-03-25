@@ -158,16 +158,43 @@ struct AVIMAPlayerListView: View {
     // MARK: - Fullscreen Player
 
     /// Standalone fullscreen player presented via `.fullScreenCover`.
-    /// No navigation chrome — close button overlay dismisses.
+    /// No navigation chrome — close button and ad controls overlay.
     private func fullscreenPlayerView(video: AVIMAVideoItem) -> some View {
-        AVIMAPlayerView(
-            video: video,
-            showNavigationChrome: false
-        )
+        FullscreenPlayerWrapper(video: video, onClose: { fullscreenVideo = nil })
+    }
+}
+
+// MARK: - Fullscreen Player Wrapper
+
+/// Wrapper that owns a ViewModel so the ad controls bar can observe ad state.
+private struct FullscreenPlayerWrapper: View {
+
+    let video: AVIMAVideoItem
+    let onClose: () -> Void
+
+    @StateObject private var playerViewModel: AVIMAPlayerViewModel
+
+    init(video: AVIMAVideoItem, onClose: @escaping () -> Void, viewModel: AVIMAPlayerViewModel? = nil) {
+        self.video = video
+        self.onClose = onClose
+        _playerViewModel = StateObject(wrappedValue: viewModel ?? AVIMAPlayerViewModel())
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            AVIMAPlayerView(
+                video: video,
+                showNavigationChrome: false,
+                viewModel: playerViewModel
+            )
+
+            // Ad controls bar — pause/play + ad info during ads
+            if playerViewModel.playbackMode == .advertisement {
+                AVIMAAdControlsView(viewModel: playerViewModel)
+            }
+        }
         .overlay(alignment: .topLeading) {
-            Button {
-                fullscreenVideo = nil
-            } label: {
+            Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
