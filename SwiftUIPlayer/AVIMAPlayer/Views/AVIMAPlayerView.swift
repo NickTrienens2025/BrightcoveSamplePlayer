@@ -734,7 +734,6 @@ private final class AdContainerViewController<Content: View>: UIViewController {
             // Main video mode: hosting view (SwiftUI controls) on top.
             view.bringSubviewToFront(hostingController.view)
             hostingController.view.isUserInteractionEnabled = true
-            debugPrintWithTimestamp("📺 IMA container hidden — hosting view on top")
         }
     }
 

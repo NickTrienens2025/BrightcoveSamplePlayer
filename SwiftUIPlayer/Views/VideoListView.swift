@@ -39,6 +39,8 @@ enum ControlType: String, Equatable, CaseIterable, Identifiable {
     case native = "AVPlayerViewController"
 
     var id: String { rawValue }
+    
+    static let supported: [ControlType] = [.bcovIMAViewController, .bcovViewController]
 }
 
 
@@ -54,7 +56,7 @@ struct VideoListView: View {
     var router: DeepLinkRouter
 
     @State
-    fileprivate var controlType: ControlType = .bcov
+    fileprivate var controlType: ControlType = .bcovIMAViewController
 
     @State
     fileprivate var navigationPath = NavigationPath()
@@ -67,7 +69,7 @@ struct VideoListView: View {
                         .font(.footnote)
                         .foregroundColor(.secondary)
                     Picker("ControlType", selection: $controlType) {
-                        ForEach(ControlType.allCases) { type in
+                        ForEach(ControlType.supported) { type in
                             Text(type.rawValue)
                                 .tag(type)
                         }
@@ -126,3 +128,4 @@ struct VideoListView_Previews: PreviewProvider {
     }
 }
 #endif
+
