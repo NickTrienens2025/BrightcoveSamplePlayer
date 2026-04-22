@@ -1002,16 +1002,16 @@ final class AVIMAPlayerViewModel: NSObject, ObservableObject {
 
     /// Resumes playback when returning from background.
     ///
-    /// - **Ads**: Do nothing — IMA resumes automatically when the app returns.
-    ///   Calling adsManager.resume() after IMA's own internal pause corrupts state.
+    /// - **Ads**: Call resume() to ensure playback continues if returning from an external browser.
     /// - **Main video**: Stay paused — unexpected audio on foreground is jarring.
     private func handleWillEnterForeground() {
         debugPrintWithTimestamp("📱 Foreground — wasPlaying: \(wasPlayingBeforeBackground), mode: \(playbackMode)")
 
         switch playbackMode {
         case .advertisement:
-            // IMA handles its own resume — do not touch adsManager.
-            debugPrintWithTimestamp("   ▶️ Ad foreground — IMA manages resume internally")
+            // Ensure the ad resumes if the app was backgrounded (e.g. by an external browser link)
+            debugPrintWithTimestamp("   ▶️ Ad foreground — resuming ad playback")
+            adsManager?.resume()
 
         case .mainVideo:
             if wasPlayingBeforeBackground {
@@ -1385,6 +1385,7 @@ extension AVIMAPlayerViewModel: IMAAdsLoaderDelegate {
         // Stored so we can update the VC when transitioning embedded ↔ fullscreen.
         let renderSettings = IMAAdsRenderingSettings()
         renderSettings.linkOpenerPresentingController = adViewController
+        renderSettings.linkOpenerDelegate = self
         self.adsRenderingSettings = renderSettings
         manager.initialize(with: renderSettings)
 
@@ -1537,6 +1538,18 @@ extension AVIMAPlayerViewModel: IMAAdsManagerDelegate {
             skipTimeRemaining: ad.skipTimeOffset
         )
         duration = ad.duration
+    }
+}
+
+// MARK: - IMALinkOpenerDelegate
+
+extension AVIMAPlayerViewModel: IMALinkOpenerDelegate {
+    
+    func linkOpenerDidClose(inAppLink linkOpener: NSObject) {
+        debugPrintWithTimestamp("🌐 In-app browser closed, resuming ad playback")
+        if playbackMode == .advertisement {
+            adsManager?.resume()
+        }
     }
 }
 

@@ -539,6 +539,16 @@ private final class AdContainerViewController<Content: View>: UIViewController {
         reparentIMAContainerIfNeeded()
     }
 
+    override func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
+        super.dismiss(animated: flag, completion: completion)
+        
+        // When an in-app browser (like "Learn More") is dismissed, resume ad playback
+        if viewModel.playbackMode == .advertisement {
+            debugPrintWithTimestamp("📺 AdContainerVC dismiss — resuming ad playback")
+            viewModel.play()
+        }
+    }
+
     /// Reparents the shared IMA container into this VC's view if it isn't already.
     ///
     /// Called from `viewWillAppear`, `updateUIViewController` (via `isActive` flag),

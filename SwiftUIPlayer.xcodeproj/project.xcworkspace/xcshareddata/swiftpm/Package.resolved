@@ -7,7 +7,7 @@
       "location" : "https://github.com/brightcove/brightcove-player-sdk-ios",
       "state" : {
         "branch" : "master",
-        "revision" : "e7bd38ed643f23ccb9db265ec88c8c054af0b3ed"
+        "revision" : "c036eb73006e1291d7a0d01eeab6c026b565bb9a"
       }
     },
     {
@@ -16,7 +16,7 @@
       "location" : "https://github.com/brightcove/brightcove-player-sdk-ios-ima.git",
       "state" : {
         "branch" : "master",
-        "revision" : "ec5de090b2282d68e4b6e6d103833d4f701867bf"
+        "revision" : "08d2ed73bb57b504bdf147a9000dfd5ae555ea68"
       }
     },
     {
@@ -25,7 +25,7 @@
       "location" : "https://github.com/googleads/swift-package-manager-google-interactive-media-ads-ios",
       "state" : {
         "branch" : "main",
-        "revision" : "871bc80349774ba228c41096129995d1e9848b04"
+        "revision" : "9bd145421334f4c3a4650b2478b21a0aa842bffb"
       }
     }
   ],
